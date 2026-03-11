@@ -6,7 +6,7 @@ import { SemesterInputSchema } from "../schemas/index.js";
 export function registerAttendanceTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_attendance",
-    "Get attendance records for all courses. Shows attended/total classes and percentage for each course.",
+    "Get attendance records for all courses. Shows attended/total classes and percentage. Requires semesterId from get_semesters.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
@@ -14,7 +14,7 @@ export function registerAttendanceTool(server: McpServer, client: VtopClient) {
         if (semesterId) payload.semesterSubId = semesterId;
 
         const html = await client.fetchPage(
-          "/vtop/processViewStudentAttendance",
+          "processViewStudentAttendance",
           payload
         );
         const records = parseAttendance(html);
@@ -32,10 +32,7 @@ export function registerAttendanceTool(server: McpServer, client: VtopClient) {
 
         return {
           content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(records, null, 2),
-            },
+            { type: "text" as const, text: JSON.stringify(records, null, 2) },
           ],
         };
       } catch (err: unknown) {

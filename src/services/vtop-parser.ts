@@ -10,20 +10,18 @@ import type {
   Semester,
 } from "../types/index.js";
 
-/** Extract text from a table cell, trimmed */
-function cellText($: cheerio.CheerioAPI, el: cheerio.Element): string {
-  return $(el).text().trim();
-}
-
-/** Parse semester dropdown options from any VTOP page */
+/**
+ * Parse semester dropdown from the timetable page.
+ * Android app: doc.getElementById('semesterSubId').getElementsByTagName('option')
+ */
 export function parseSemesters(html: string): Semester[] {
   const $ = cheerio.load(html);
   const semesters: Semester[] = [];
 
-  $("select option").each((_i, el) => {
-    const id = $(el).attr("value");
+  $("#semesterSubId option, select option").each((_i, el) => {
+    const id = $(el).attr("value")?.trim();
     const name = $(el).text().trim();
-    if (id && name && id !== "") {
+    if (id && name) {
       semesters.push({ id, name });
     }
   });
@@ -31,166 +29,382 @@ export function parseSemesters(html: string): Semester[] {
   return semesters;
 }
 
-/** Parse attendance table from VTOP HTML */
+/**
+ * Parse attendance from VTOP HTML.
+ *
+ * Android app: table = doc.getElementById('getStudentDetails')
+ * Columns by heading: 'course type', 'slot', 'attended', 'total', 'percentage'
+ */
 export function parseAttendance(html: string): AttendanceRecord[] {
   const $ = cheerio.load(html);
   const records: AttendanceRecord[] = [];
 
-  // VTOP attendance is typically in a table with class or id
-  $("table tbody tr").each((_i, row) => {
-    const cells = $(row).find("td");
-    if (cells.length < 6) return;
+  const table = $("#getStudentDetails").first();
+  if (!table.length) return records;
 
-    const courseCode = cellText($, cells[0]);
-    const courseName = cellText($, cells[1]);
-    const courseType = cellText($, cells[2]);
+  const headings: string[] = [];
+  table.find("th").each((_i, el) => {
+    headings.push($(el).text().trim().toLowerCase());
+  });
 
-    // Skip header-like rows
-    if (!courseCode || courseCode.toLowerCase() === "course code") return;
+  const courseCodeIdx = headings.findIndex((h) => h.includes("code"));
+  const courseNameIdx = headings.findIndex(
+    (h) =>
+      h.includes("title") ||
+      (h.includes("course") && !h.includes("type") && !h.includes("code"))
+  );
+  const courseTypeIdx = headings.findIndex(
+    (h) => h.includes("course") && h.includes("type")
+  );
+  const slotIdx = headings.findIndex((h) => h.includes("slot"));
+  const attendedIdx = headings.findIndex((h) => h.includes("attended"));
+  const totalIdx = headings.findIndex((h) => h.includes("total"));
+  const percentageIdx = headings.findIndex((h) => h.includes("percentage"));
 
-    const attended = parseInt(cellText($, cells[3]), 10) || 0;
-    const total = parseInt(cellText($, cells[4]), 10) || 0;
-    const percentageText = cellText($, cells[5]);
-    const percentage = parseFloat(percentageText) || 0;
+  const cells = table.find("td");
+  const colCount = headings.length;
+
+  for (let i = 0; i + colCount <= cells.length; i += colCount) {
+    const cell = (idx: number) =>
+      idx >= 0 ? $(cells[i + idx]).text().trim() : "";
+
+    const slot = slotIdx >= 0 ? cell(slotIdx).split("+")[0].trim() : "";
+    if (!slot && courseCodeIdx < 0) continue;
 
     records.push({
-      courseCode,
-      courseName,
-      courseType,
-      attended,
-      total,
-      percentage,
+      courseCode: cell(courseCodeIdx),
+      courseName: cell(courseNameIdx),
+      courseType: cell(courseTypeIdx),
+      slot,
+      attended: parseInt(cell(attendedIdx), 10) || 0,
+      total: parseInt(cell(totalIdx), 10) || 0,
+      percentage: parseFloat(cell(percentageIdx)) || 0,
     });
-  });
-
-  return records;
-}
-
-/** Parse timetable from VTOP HTML */
-export function parseTimetable(html: string): TimetableSlot[] {
-  const $ = cheerio.load(html);
-  const slots: TimetableSlot[] = [];
-  const days = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
-
-  $("table tbody tr").each((_i, row) => {
-    const cells = $(row).find("td");
-    if (cells.length < 2) return;
-
-    const firstCell = cellText($, cells[0]);
-    // Check if first cell is a day name or contains time info
-    const dayMatch = days.find(
-      (d) => firstCell.toLowerCase() === d.toLowerCase()
-    );
-
-    if (dayMatch) {
-      // Each subsequent cell represents a time slot
-      cells.each((j, cell) => {
-        if (j === 0) return; // Skip the day column
-        const content = $(cell).text().trim();
-        if (!content || content === "-") return;
-
-        // Parse slot content: typically "COURSE_CODE-TYPE\nVENUE\nFACULTY"
-        const lines = content.split(/\n/).map((l) => l.trim());
-        if (lines.length === 0) return;
-
-        const courseInfo = lines[0].split("-");
-        slots.push({
-          day: dayMatch,
-          startTime: "",
-          endTime: "",
-          courseCode: courseInfo[0] ?? lines[0],
-          courseName: "",
-          courseType: courseInfo[1] ?? "",
-          venue: lines[1] ?? "",
-          faculty: lines[2] ?? "",
-        });
-      });
-    }
-  });
-
-  return slots;
-}
-
-/** Parse internal marks from VTOP HTML */
-export function parseMarks(html: string): MarksRecord[] {
-  const $ = cheerio.load(html);
-  const records: MarksRecord[] = [];
-  let currentRecord: MarksRecord | null = null;
-
-  $("table tbody tr").each((_i, row) => {
-    const cells = $(row).find("td");
-    if (cells.length < 3) return;
-
-    const firstCell = cellText($, cells[0]);
-
-    // Check if this is a course header row (has course code pattern)
-    if (/^[A-Z]{3,4}\d{3,4}/.test(firstCell)) {
-      if (currentRecord) {
-        records.push(currentRecord);
-      }
-      currentRecord = {
-        courseCode: firstCell,
-        courseName: cellText($, cells[1]),
-        courseType: cellText($, cells[2]),
-        marks: [],
-      };
-    } else if (currentRecord && firstCell) {
-      // This is a marks component row
-      const scored = parseFloat(cellText($, cells[cells.length - 2])) || 0;
-      const status = cellText($, cells[cells.length - 1]);
-
-      currentRecord.marks.push({
-        component: firstCell,
-        maxMarks: parseFloat(cellText($, cells[1])) || 0,
-        weightage: parseFloat(cellText($, cells[2])) || 0,
-        scored,
-        status,
-      });
-    }
-  });
-
-  if (currentRecord) {
-    records.push(currentRecord);
   }
 
   return records;
 }
 
-/** Parse exam schedule from VTOP HTML */
+/**
+ * Parse courses from processViewTimeTable response.
+ *
+ * Android app: doc.getElementById('studentDetailsList').getElementsByTagName('table')[0]
+ * Columns: 'course' (code-title(type)), 'l t p j c' (credits), 'slot' (slot-venue), 'faculty'
+ */
+export function parseCourses(
+  html: string
+): {
+  code: string;
+  title: string;
+  type: string;
+  credits: number;
+  slots: string[];
+  venue: string;
+  faculty: string;
+}[] {
+  const $ = cheerio.load(html);
+  const courses: {
+    code: string;
+    title: string;
+    type: string;
+    credits: number;
+    slots: string[];
+    venue: string;
+    faculty: string;
+  }[] = [];
+
+  const container = $("#studentDetailsList");
+  if (!container.length) return courses;
+
+  const table = container.find("table").first();
+  if (!table.length) return courses;
+
+  const headings: string[] = [];
+  table.find("th").each((_i, el) => {
+    headings.push($(el).text().trim().toLowerCase());
+  });
+
+  const courseIdx = headings.findIndex((h) => h === "course");
+  const creditsIdx = headings.findIndex(
+    (h) => h.includes("l t p j c") || h === "c"
+  );
+  const slotVenueIdx = headings.findIndex((h) => h.includes("slot"));
+  const facultyIdx = headings.findIndex((h) => h.includes("faculty"));
+
+  const cells = table.find("td");
+  const colCount = headings.length;
+
+  for (let i = 0; i + colCount <= cells.length; i += colCount) {
+    const cellText = (idx: number) =>
+      idx >= 0
+        ? $(cells[i + idx])
+            .text()
+            .trim()
+            .replace(/\t/g, "")
+            .replace(/\n/g, " ")
+        : "";
+
+    const rawCourse = cellText(courseIdx);
+    if (!rawCourse) continue;
+
+    const rawCourseType = rawCourse.split("(").slice(-1)[0].toLowerCase();
+    const rawCredits = cellText(creditsIdx).trim().split(/\s+/);
+    const rawSlotVenue = cellText(slotVenueIdx).split("-");
+    const rawFaculty = cellText(facultyIdx).split("-");
+
+    courses.push({
+      code: rawCourse.split("-")[0].trim(),
+      title: rawCourse.split("-").slice(1).join("-").split("(")[0].trim(),
+      type: rawCourseType.includes("lab")
+        ? "lab"
+        : rawCourseType.includes("project")
+          ? "project"
+          : "theory",
+      credits: parseInt(rawCredits[rawCredits.length - 1], 10) || 0,
+      slots: rawSlotVenue[0].trim().split("+"),
+      venue: rawSlotVenue.slice(1).join(" - ").trim(),
+      faculty: rawFaculty[0].trim(),
+    });
+  }
+
+  return courses;
+}
+
+/**
+ * Parse timetable from processViewTimeTable response.
+ * Returns courses with their slot/venue/faculty info as structured data.
+ */
+export function parseTimetable(html: string): TimetableSlot[] {
+  const courses = parseCourses(html);
+  return courses.map((c) => ({
+    day: "",
+    startTime: "",
+    endTime: "",
+    courseCode: c.code,
+    courseName: c.title,
+    courseType: c.type,
+    venue: c.venue,
+    faculty: c.faculty,
+    slots: c.slots.join("+"),
+    credits: c.credits,
+  }));
+}
+
+/**
+ * Parse marks from examinations/doStudentMarkView response.
+ *
+ * Android app: table = doc.getElementById('fixedTableContainer')
+ * Outer rows: course type + slot. Next row: inner table with mark components.
+ */
+export function parseMarks(html: string): MarksRecord[] {
+  const $ = cheerio.load(html);
+  const records: MarksRecord[] = [];
+
+  if (html.toLowerCase().includes("no data found")) return records;
+
+  const table = $("#fixedTableContainer").first();
+  if (!table.length) return records;
+
+  const rows = table.find("> tbody > tr, > tr");
+
+  // Find heading indices from first row
+  const headings: string[] = [];
+  rows.first().find("td, th").each((_i, el) => {
+    headings.push($(el).text().trim().toLowerCase());
+  });
+
+  const courseTypeIdx = headings.findIndex(
+    (h) => h.includes("course") && h.includes("type")
+  );
+  const slotIdx = headings.findIndex((h) => h.includes("slot"));
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = $(rows[i]);
+    const outerCells = row.find("> td");
+
+    if (outerCells.length < 2) continue;
+
+    const courseType =
+      courseTypeIdx >= 0
+        ? $(outerCells[courseTypeIdx]).text().trim()
+        : "";
+    const slot =
+      slotIdx >= 0
+        ? $(outerCells[slotIdx]).text().trim().split("+")[0].trim()
+        : "";
+
+    // Next row contains inner marks table
+    i++;
+    if (i >= rows.length) break;
+
+    const innerRow = $(rows[i]);
+    const innerTable = innerRow.find("table").first();
+    if (!innerTable.length) continue;
+
+    const innerRows = innerTable.find("tr");
+    if (innerRows.length < 2) continue;
+
+    const innerHeadings: string[] = [];
+    $(innerRows[0])
+      .find("td, th")
+      .each((_j, el) => {
+        innerHeadings.push($(el).text().trim().toLowerCase());
+      });
+
+    const titleIdx = innerHeadings.findIndex((h) => h.includes("title"));
+    const maxIdx = innerHeadings.findIndex(
+      (h) => h.includes("max") && !h.includes("weightage")
+    );
+    const scoredIdx = innerHeadings.findIndex((h) => h.includes("scored"));
+    const weightageIdx = innerHeadings.findIndex(
+      (h) => h.includes("weightage") && h.includes("mark")
+    );
+    const maxWeightageIdx = innerHeadings.findIndex((h) => h.includes("%"));
+    const averageIdx = innerHeadings.findIndex((h) =>
+      h.includes("average")
+    );
+    const statusIdx = innerHeadings.findIndex((h) => h.includes("status"));
+
+    const record: MarksRecord = {
+      courseCode: "",
+      courseName: "",
+      courseType,
+      slot,
+      marks: [],
+    };
+
+    for (let j = 1; j < innerRows.length; j++) {
+      const innerCells = $(innerRows[j]).find("td");
+      const cell = (idx: number) =>
+        idx >= 0 && idx < innerCells.length
+          ? $(innerCells[idx]).text().trim()
+          : "";
+
+      const title = cell(titleIdx);
+      if (!title) continue;
+
+      record.marks.push({
+        component: title,
+        maxMarks: parseFloat(cell(maxIdx)) || 0,
+        scored: parseFloat(cell(scoredIdx)) || 0,
+        maxWeightage: parseFloat(cell(maxWeightageIdx)) || 0,
+        weightage: parseFloat(cell(weightageIdx)) || 0,
+        average: parseFloat(cell(averageIdx)) || null,
+        status: cell(statusIdx),
+      });
+    }
+
+    // Skip inner table rows in outer loop
+    i += innerRows.length;
+
+    if (record.marks.length > 0) {
+      records.push(record);
+    }
+  }
+
+  return records;
+}
+
+/**
+ * Parse exam schedule from examinations/doSearchExamScheduleForStudent.
+ *
+ * Android app: Columns by heading: slot, date, exam time, venue, location, seat no.
+ * Exam type headers span multiple columns (colSpan > 1).
+ */
 export function parseExamSchedule(html: string): ExamSchedule[] {
   const $ = cheerio.load(html);
   const schedules: ExamSchedule[] = [];
 
-  $("table tbody tr").each((_i, row) => {
-    const cells = $(row).find("td");
-    if (cells.length < 5) return;
+  if (html.toLowerCase().includes("not found")) return schedules;
 
-    const courseCode = cellText($, cells[0]);
-    if (!courseCode || courseCode.toLowerCase() === "course code") return;
+  const rows = $("tr");
+  if (rows.length < 2) return schedules;
 
-    schedules.push({
-      courseCode,
-      courseName: cellText($, cells[1]),
-      examDate: cellText($, cells[2]),
-      session: cellText($, cells[3]),
-      time: cellText($, cells[4]),
-      venue: cells.length > 5 ? cellText($, cells[5]) : "",
-      seatNo: cells.length > 6 ? cellText($, cells[6]) : "",
+  const headings: string[] = [];
+  $(rows[0])
+    .find("td, th")
+    .each((_i, el) => {
+      headings.push($(el).text().trim().toLowerCase());
     });
-  });
+
+  const slotIdx = headings.findIndex((h) => h.includes("slot"));
+  const dateIdx = headings.findIndex((h) => h.includes("date"));
+  const timeIdx = headings.findIndex(
+    (h) => h.includes("exam") && h.includes("time")
+  );
+  const venueIdx = headings.findIndex((h) => h.includes("venue"));
+  const locationIdx = headings.findIndex((h) => h.includes("location"));
+  const seatIdx = headings.findIndex(
+    (h) => h.includes("seat") && h.includes("no")
+  );
+
+  let examTitle = "";
+  let examCount = 0;
+
+  const cells = $("td");
+  const colCount = headings.length;
+
+  for (let i = colCount; i < cells.length; i++) {
+    const cell = $(cells[i]);
+    const colspan = parseInt(cell.attr("colspan") ?? "1", 10);
+
+    // Exam type header spans multiple columns
+    if (colspan > 1) {
+      examTitle = cell.text().trim();
+      examCount++;
+      continue;
+    }
+
+    const index = (i - examCount) % colCount;
+
+    if (index === slotIdx) {
+      schedules.push({
+        examType: examTitle,
+        courseCode: "",
+        courseName: "",
+        slot: cell.text().trim().split("+")[0],
+        examDate: "",
+        session: "",
+        time: "",
+        venue: "",
+        seatNo: "",
+        seatLocation: "",
+      });
+    }
+
+    const current = schedules[schedules.length - 1];
+    if (!current) continue;
+
+    if (index === dateIdx) {
+      const date = cell.text().trim().toUpperCase();
+      current.examDate = date || "";
+    } else if (index === timeIdx) {
+      current.time = cell.text().trim();
+      const timings = current.time.split("-");
+      if (timings.length === 2) {
+        current.session = `${timings[0].trim()} - ${timings[1].trim()}`;
+      }
+    } else if (index === venueIdx) {
+      const v = cell.text().trim();
+      current.venue = v.replace(/-/g, "").trim() ? v : "";
+    } else if (index === locationIdx) {
+      const l = cell.text().trim();
+      current.seatLocation = l.replace(/-/g, "").trim() ? l : "";
+    } else if (index === seatIdx) {
+      const n = cell.text().trim();
+      current.seatNo = n.replace(/-/g, "").trim() ? n : "";
+    }
+  }
 
   return schedules;
 }
 
-/** Parse grade history from VTOP HTML */
+/**
+ * Parse grade history from examinations/examGradeView/StudentGradeHistory.
+ *
+ * Android app: Last table with heading containing 'credits'.
+ * Extracts 'earned' credits and 'cgpa' from the second row.
+ */
 export function parseGradeHistory(html: string): GradeHistory {
   const $ = cheerio.load(html);
   const history: GradeHistory = {
@@ -199,73 +413,118 @@ export function parseGradeHistory(html: string): GradeHistory {
     totalCredits: 0,
   };
 
-  let currentSemester: GradeHistory["semesters"][number] | null = null;
+  const tables = $("table");
 
-  $("table").each((_i, table) => {
-    $(table)
-      .find("tbody tr")
-      .each((_j, row) => {
-        const cells = $(row).find("td");
-        const text = $(row).text().trim();
+  for (let i = tables.length - 1; i >= 0; i--) {
+    const table = $(tables[i]);
+    const firstRowCells = table.find("tr").first().find("td");
+    const firstCellText = firstRowCells.first().text().toLowerCase();
 
-        // Detect semester header
-        if (text.includes("Semester") && cells.length <= 2) {
-          if (currentSemester) {
-            history.semesters.push(currentSemester);
-          }
-          currentSemester = {
-            semester: text,
-            gpa: 0,
-            credits: 0,
-            grades: [],
-          };
-          return;
-        }
+    if (firstCellText.includes("credits")) {
+      let creditsIdx = -1;
+      let cgpaIdx = -1;
 
-        // Detect GPA row
-        if (text.includes("GPA") || text.includes("CGPA")) {
-          const gpaMatch = text.match(/(\d+\.?\d*)/);
-          if (gpaMatch) {
-            const val = parseFloat(gpaMatch[1]);
-            if (text.includes("CGPA")) {
-              history.cgpa = val;
-            } else if (currentSemester) {
-              currentSemester.gpa = val;
-            }
-          }
-          return;
-        }
-
-        // Grade rows
-        if (currentSemester && cells.length >= 5) {
-          const courseCode = cellText($, cells[0]);
-          if (!courseCode || /^(sl|course)/i.test(courseCode)) return;
-
-          const credits = parseFloat(cellText($, cells[3])) || 0;
-          const grade = cellText($, cells[4]);
-
-          currentSemester.grades.push({
-            courseCode,
-            courseName: cellText($, cells[1]),
-            courseType: cellText($, cells[2]),
-            credits,
-            grade,
-            gradePoints: 0,
-          });
-          currentSemester.credits += credits;
-          history.totalCredits += credits;
-        }
+      firstRowCells.each((j, el) => {
+        const text = $(el).text().toLowerCase();
+        if (text.includes("earned")) creditsIdx = j;
+        if (text.includes("cgpa")) cgpaIdx = j;
       });
-  });
 
-  if (currentSemester) {
-    history.semesters.push(currentSemester);
+      const allCells = table.find("td");
+      const headingCount = firstRowCells.length;
+
+      if (creditsIdx >= 0 && creditsIdx + headingCount < allCells.length) {
+        history.totalCredits =
+          parseFloat($(allCells[creditsIdx + headingCount]).text()) || 0;
+      }
+      if (cgpaIdx >= 0 && cgpaIdx + headingCount < allCells.length) {
+        history.cgpa =
+          parseFloat($(allCells[cgpaIdx + headingCount]).text()) || 0;
+      }
+      break;
+    }
   }
 
   return history;
 }
 
-/** Parse student profile from VTOP HTML */
+/**
+ * Parse semester grades from examinations/examGradeView/doStudentGradeView.
+ *
+ * Android app: first table, headings with 'code' and 'grade'.
+ * GPA from last cell text split by ':'.
+ */
+export function parseSemesterGrades(html: string): {
+  grades: GradeRecord[];
+  gpa: number;
+} {
+  const $ = cheerio.load(html);
+  const result: { grades: GradeRecord[]; gpa: number } = {
+    grades: [],
+    gpa: 0,
+  };
+
+  if (html.toLowerCase().includes("no records")) return result;
+
+  const table = $("table").first();
+  if (!table.length) return result;
+
+  const headings: string[] = [];
+  let creditsSpan = 1;
+  let creditsIdx = -1;
+
+  table.find("th").each((i, el) => {
+    const text = $(el).text().trim().toLowerCase();
+    headings.push(text);
+    if (text.includes("credits")) {
+      creditsIdx = i;
+      creditsSpan = parseInt($(el).attr("colspan") ?? "1", 10) || 1;
+    }
+  });
+
+  let codeIdx = headings.findIndex((h) => h.includes("code"));
+  let gradeIdx = headings.findIndex((h) => h.includes("grade"));
+
+  // Adjust indices for colspan
+  if (codeIdx > creditsIdx && creditsIdx >= 0) codeIdx += creditsSpan - 1;
+  if (gradeIdx > creditsIdx && creditsIdx >= 0) gradeIdx += creditsSpan - 1;
+
+  const cells = table.find("td");
+  const adjustedColCount = headings.length + creditsSpan - 1;
+
+  for (let i = 0; codeIdx + i < cells.length && gradeIdx + i < cells.length; i += adjustedColCount) {
+    const code = $(cells[codeIdx + i]).text().trim();
+    const grade = $(cells[gradeIdx + i]).text().trim();
+    if (!code) continue;
+
+    result.grades.push({
+      courseCode: code,
+      courseName: "",
+      courseType: "",
+      credits: 0,
+      grade,
+      gradePoints: 0,
+    });
+  }
+
+  // GPA from last cell: "SGPA : 8.58"
+  if (cells.length > 0) {
+    const lastCellText = $(cells[cells.length - 1]).text().trim();
+    const parts = lastCellText.split(":");
+    if (parts.length > 1) {
+      result.gpa = parseFloat(parts[1].trim()) || 0;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parse student profile from studentsRecord/StudentProfileAllView.
+ *
+ * Android app: Iterates <td> cells, finds label cells with key text,
+ * reads the next cell as value.
+ */
 export function parseProfile(html: string): StudentProfile {
   const $ = cheerio.load(html);
 
@@ -281,30 +540,33 @@ export function parseProfile(html: string): StudentProfile {
     bloodGroup: "",
   };
 
-  // VTOP profile pages typically use label-value pairs in tables or divs
-  const extractField = (label: string): string => {
-    let value = "";
-    $("td, th, div, span").each((_i, el) => {
-      const text = $(el).text().trim();
-      if (text.toLowerCase().includes(label.toLowerCase())) {
-        const next = $(el).next();
-        if (next.length) {
-          value = next.text().trim();
-        }
-      }
-    });
-    return value;
-  };
+  if (!html.toLowerCase().includes("personal information")) return profile;
 
-  profile.name = extractField("Name");
-  profile.registrationNumber = extractField("Register Number") || extractField("Registration Number");
-  profile.applicationNumber = extractField("Application Number");
-  profile.program = extractField("Programme") || extractField("Program");
-  profile.branch = extractField("Branch");
-  profile.school = extractField("School");
-  profile.email = extractField("Email") || extractField("E-Mail");
-  profile.phone = extractField("Mobile") || extractField("Phone");
-  profile.bloodGroup = extractField("Blood Group");
+  const cells = $("td");
+  for (let i = 0; i < cells.length - 1; i++) {
+    const key = $(cells[i]).text().trim().toLowerCase();
+    const value = $(cells[i + 1]).text().trim();
+
+    if (key.includes("student") && key.includes("name")) {
+      profile.name = value;
+    } else if (key.includes("register") && key.includes("number")) {
+      profile.registrationNumber = value;
+    } else if (key.includes("application") && key.includes("number")) {
+      profile.applicationNumber = value;
+    } else if (key.includes("programme") || key === "program") {
+      profile.program = value;
+    } else if (key.includes("branch")) {
+      profile.branch = value;
+    } else if (key.includes("school")) {
+      profile.school = value;
+    } else if (key.includes("e-mail") || key.includes("email")) {
+      profile.email = value;
+    } else if (key.includes("mobile") || key.includes("phone")) {
+      profile.phone = value;
+    } else if (key.includes("blood")) {
+      profile.bloodGroup = value;
+    }
+  }
 
   return profile;
 }

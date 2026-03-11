@@ -6,7 +6,7 @@ import { SemesterInputSchema } from "../schemas/index.js";
 export function registerMarksTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_marks",
-    "Get internal marks/assessment scores for all courses. Shows component-wise marks, weightage, and status.",
+    "Get internal marks/assessment scores for all courses. Shows component-wise marks, weightage, and status. Requires semesterId from get_semesters.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
@@ -14,7 +14,7 @@ export function registerMarksTool(server: McpServer, client: VtopClient) {
         if (semesterId) payload.semesterSubId = semesterId;
 
         const html = await client.fetchPage(
-          "/vtop/examinations/doStudentMarkView",
+          "examinations/doStudentMarkView",
           payload
         );
         const records = parseMarks(html);
@@ -32,10 +32,7 @@ export function registerMarksTool(server: McpServer, client: VtopClient) {
 
         return {
           content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(records, null, 2),
-            },
+            { type: "text" as const, text: JSON.stringify(records, null, 2) },
           ],
         };
       } catch (err: unknown) {

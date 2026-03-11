@@ -2,6 +2,7 @@ export interface AttendanceRecord {
   courseCode: string;
   courseName: string;
   courseType: string;
+  slot: string;
   attended: number;
   total: number;
   percentage: number;
@@ -16,29 +17,37 @@ export interface TimetableSlot {
   courseType: string;
   venue: string;
   faculty: string;
+  slots?: string;
+  credits?: number;
 }
 
 export interface MarksRecord {
   courseCode: string;
   courseName: string;
   courseType: string;
+  slot: string;
   marks: {
     component: string;
     maxMarks: number;
-    weightage: number;
     scored: number;
+    maxWeightage: number;
+    weightage: number;
+    average: number | null;
     status: string;
   }[];
 }
 
 export interface ExamSchedule {
+  examType: string;
   courseCode: string;
   courseName: string;
+  slot: string;
   examDate: string;
   session: string;
   time: string;
   venue: string;
   seatNo: string;
+  seatLocation: string;
 }
 
 export interface GradeRecord {

@@ -11,7 +11,8 @@ export function registerProfileTool(server: McpServer, client: VtopClient) {
     async () => {
       try {
         const html = await client.fetchPage(
-          "/vtop/studentsRecord/doStudentProfileAllView"
+          "studentsRecord/StudentProfileAllView",
+          { verifyMenu: "true", nocache: String(Date.now()) }
         );
         const profile = parseProfile(html);
 

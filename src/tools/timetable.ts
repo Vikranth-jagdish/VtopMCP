@@ -6,7 +6,7 @@ import { SemesterInputSchema } from "../schemas/index.js";
 export function registerTimetableTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_timetable",
-    "Get the class timetable/schedule. Shows courses, timings, venues, and faculty for each day.",
+    "Get class timetable/schedule with courses, slots, venues, and faculty. Requires semesterId from get_semesters.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
@@ -14,7 +14,7 @@ export function registerTimetableTool(server: McpServer, client: VtopClient) {
         if (semesterId) payload.semesterSubId = semesterId;
 
         const html = await client.fetchPage(
-          "/vtop/processViewTimeTable",
+          "processViewTimeTable",
           payload
         );
         const slots = parseTimetable(html);
@@ -24,7 +24,7 @@ export function registerTimetableTool(server: McpServer, client: VtopClient) {
             content: [
               {
                 type: "text" as const,
-                text: "No timetable data found. The semester may not have started or the page format may have changed.",
+                text: "No timetable data found. The semester may not have started yet.",
               },
             ],
           };
@@ -32,10 +32,7 @@ export function registerTimetableTool(server: McpServer, client: VtopClient) {
 
         return {
           content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(slots, null, 2),
-            },
+            { type: "text" as const, text: JSON.stringify(slots, null, 2) },
           ],
         };
       } catch (err: unknown) {

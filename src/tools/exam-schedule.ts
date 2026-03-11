@@ -9,7 +9,7 @@ export function registerExamScheduleTool(
 ) {
   server.tool(
     "get_exam_schedule",
-    "Get exam schedule with dates, timings, venues, and seat numbers for each course.",
+    "Get exam schedule with dates, timings, venues, and seat numbers. Requires semesterId from get_semesters.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
@@ -17,7 +17,7 @@ export function registerExamScheduleTool(
         if (semesterId) payload.semesterSubId = semesterId;
 
         const html = await client.fetchPage(
-          "/vtop/examinations/doSearchExamScheduleForStudent",
+          "examinations/doSearchExamScheduleForStudent",
           payload
         );
         const schedules = parseExamSchedule(html);
