@@ -10,6 +10,8 @@ export class VtopClient {
   private authenticated = false;
   private csrfToken: string | null = null;
   private authorizedID: string | null = null;
+  private cachedSemesters: { id: string; name: string }[] | null = null;
+  private cachedActiveSemesterId: string | null = null;
 
   constructor(baseUrl?: string) {
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
@@ -223,6 +225,52 @@ export class VtopClient {
     this.authenticated = false;
     this.authorizedID = null;
     this.csrfToken = null;
+    this.cachedSemesters = null;
+    this.cachedActiveSemesterId = null;
+  }
+
+  /**
+   * Return the semester the student is actively enrolled in.
+   *
+   * Important: cannot just pick semesters[0]. VIT runs three terms (Fall,
+   * Winter, Summer); the dropdown is ordered most-recent-first regardless
+   * of whether the student is enrolled in that term. Summer Term (≈May–
+   * July) exists primarily for arrears, so many students see Summer at
+   * index 0 but have no courses in it.
+   *
+   * Strategy: walk newest → oldest, probe the timetable endpoint for each,
+   * and return the first semester whose timetable HTML actually contains
+   * course rows (matched by VIT's `B<DEPT><NUM><L|P|E>` course-code
+   * pattern, e.g. BCSE302L). Cache the answer so subsequent tool calls in
+   * the same session pay zero probe cost.
+   */
+  async getCurrentSemesterId(): Promise<string> {
+    if (this.cachedActiveSemesterId) return this.cachedActiveSemesterId;
+
+    const semesters = await this.getSemesters();
+    if (semesters.length === 0) {
+      throw new Error("No semesters available on VTOP for this account.");
+    }
+
+    const COURSE_CODE_PATTERN = /\b[A-Z]{3,5}\d{3,4}[A-Z]?\b/;
+    for (const sem of semesters) {
+      try {
+        const html = await this.postWithAuth("processViewTimeTable", {
+          semesterSubId: sem.id,
+        });
+        if (COURSE_CODE_PATTERN.test(html)) {
+          this.cachedActiveSemesterId = sem.id;
+          return sem.id;
+        }
+      } catch {
+        // Probe failure on one semester shouldn't block trying the rest.
+      }
+    }
+
+    // Nothing had data (very early in a fresh term, or admin issue).
+    // Fall back to the newest entry so the caller gets a usable id.
+    this.cachedActiveSemesterId = semesters[0].id;
+    return semesters[0].id;
   }
 
   /**
@@ -251,6 +299,7 @@ export class VtopClient {
       }
     }
 
+    this.cachedSemesters = semesters;
     return semesters;
   }
 

@@ -7,6 +7,7 @@ import { registerMarksTool } from "./tools/marks.js";
 import { registerExamScheduleTool } from "./tools/exam-schedule.js";
 import { registerGradesTool } from "./tools/grades.js";
 import { registerProfileTool } from "./tools/profile.js";
+import { registerCurriculumTool } from "./tools/curriculum.js";
 
 export function createServer(): { server: McpServer; client: VtopClient } {
   const server = new McpServer({
@@ -24,6 +25,7 @@ export function createServer(): { server: McpServer; client: VtopClient } {
   registerExamScheduleTool(server, client);
   registerGradesTool(server, client);
   registerProfileTool(server, client);
+  registerCurriculumTool(server, client);
 
   return { server, client };
 }

@@ -86,3 +86,43 @@ export interface Semester {
   id: string;
   name: string;
 }
+
+export interface CurriculumProgressRow {
+  /** Display name, e.g. "Discipline Core" or "Foreign Language" */
+  name: string;
+  /** Only present on basket rows; the parent distribution-type code (e.g. "FCHSSM") */
+  distributionType?: string;
+  creditsRequired: number;
+  creditsEarned: number;
+  creditsRemaining: number;
+  /** 0–100, rounded to 1 decimal place. 100 means fully satisfied. */
+  percentComplete: number;
+}
+
+export interface GradeDistribution {
+  S: number;
+  A: number;
+  B: number;
+  C: number;
+  D: number;
+  E: number;
+  F: number;
+  N: number;
+}
+
+export interface CurriculumProgress {
+  totals: {
+    creditsRegistered: number;
+    creditsRequired: number;
+    creditsEarned: number;
+    creditsRemaining: number;
+    percentComplete: number;
+    cgpa: number;
+  };
+  /** Per high-level distribution type (Foundation Core, Discipline Core, Electives, etc.) */
+  distributionTypes: CurriculumProgressRow[];
+  /** Per fine-grained basket (Foreign Language, HSM Elective, Extra-curricular, etc.) */
+  baskets: CurriculumProgressRow[];
+  /** Count of each grade earned across the whole degree. */
+  gradeDistribution: GradeDistribution;
+}

@@ -10,12 +10,10 @@ export function registerTimetableTool(server: McpServer, client: VtopClient) {
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
-        const payload: Record<string, string> = {};
-        if (semesterId) payload.semesterSubId = semesterId;
-
+        const id = semesterId ?? (await client.getCurrentSemesterId());
         const html = await client.fetchPage(
           "processViewTimeTable",
-          payload
+          { semesterSubId: id }
         );
         const slots = parseTimetable(html);
 

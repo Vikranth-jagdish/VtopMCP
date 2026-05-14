@@ -28,6 +28,7 @@ const EXPECTED_TOOLS = [
   "get_grade_history",
   "get_semester_grades",
   "get_profile",
+  "get_curriculum_progress",
 ].sort();
 
 const SERVER_PATH = path.resolve(process.cwd(), "dist", "index.js");

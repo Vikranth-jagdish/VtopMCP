@@ -13,12 +13,10 @@ export function registerExamScheduleTool(
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
-        const payload: Record<string, string> = {};
-        if (semesterId) payload.semesterSubId = semesterId;
-
+        const id = semesterId ?? (await client.getCurrentSemesterId());
         const html = await client.fetchPage(
           "examinations/doSearchExamScheduleForStudent",
-          payload
+          { semesterSubId: id }
         );
         const schedules = parseExamSchedule(html);
 
