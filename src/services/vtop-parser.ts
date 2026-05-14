@@ -405,6 +405,17 @@ export function parseExamSchedule(html: string): ExamSchedule[] {
  * Android app: Last table with heading containing 'credits'.
  * Extracts 'earned' credits and 'cgpa' from the second row.
  */
+const GRADE_POINTS: Record<string, number> = {
+  S: 10,
+  A: 9,
+  B: 8,
+  C: 7,
+  D: 6,
+  E: 5,
+  F: 0,
+  N: 0,
+};
+
 export function parseGradeHistory(html: string): GradeHistory {
   const $ = cheerio.load(html);
   const history: GradeHistory = {
@@ -413,26 +424,23 @@ export function parseGradeHistory(html: string): GradeHistory {
     totalCredits: 0,
   };
 
+  // Pull CGPA + total credits from the summary table whose header row contains
+  // "Credits Registered / Credits Earned / CGPA / S Grades / ...".
   const tables = $("table");
-
   for (let i = tables.length - 1; i >= 0; i--) {
     const table = $(tables[i]);
     const firstRowCells = table.find("tr").first().find("td");
     const firstCellText = firstRowCells.first().text().toLowerCase();
-
     if (firstCellText.includes("credits")) {
       let creditsIdx = -1;
       let cgpaIdx = -1;
-
       firstRowCells.each((j, el) => {
         const text = $(el).text().toLowerCase();
         if (text.includes("earned")) creditsIdx = j;
         if (text.includes("cgpa")) cgpaIdx = j;
       });
-
       const allCells = table.find("td");
       const headingCount = firstRowCells.length;
-
       if (creditsIdx >= 0 && creditsIdx + headingCount < allCells.length) {
         history.totalCredits =
           parseFloat($(allCells[creditsIdx + headingCount]).text()) || 0;
@@ -443,6 +451,54 @@ export function parseGradeHistory(html: string): GradeHistory {
       }
       break;
     }
+  }
+
+  // Walk the "Effective Grades" table for per-course rows, then group by
+  // exam month. The detail rows (id="detailsView_...") are skipped.
+  const grouped = new Map<string, GradeRecord[]>();
+  $("table tr.tableContent").each((_i, tr) => {
+    const $tr = $(tr);
+    if ($tr.attr("id")?.startsWith("detailsView_")) return;
+    const cells = $tr.find("td");
+    if (cells.length < 8) return;
+    const courseCode = $(cells[1]).text().trim();
+    if (!/^[A-Z]{2,}[0-9]+/i.test(courseCode)) return;
+    const courseName = $(cells[2]).text().trim();
+    const courseType = $(cells[3]).text().trim();
+    const credits = parseFloat($(cells[4]).text().trim()) || 0;
+    const grade = $(cells[5]).text().trim().toUpperCase();
+    const examMonth = $(cells[6]).text().trim();
+    if (!examMonth) return;
+    const record: GradeRecord = {
+      courseCode,
+      courseName,
+      courseType,
+      credits,
+      grade,
+      gradePoints: GRADE_POINTS[grade] ?? 0,
+    };
+    const bucket = grouped.get(examMonth) ?? [];
+    bucket.push(record);
+    grouped.set(examMonth, bucket);
+  });
+
+  for (const [examMonth, grades] of grouped) {
+    const earnedCredits = grades.reduce(
+      (s, g) => s + (g.grade === "F" || g.grade === "N" ? 0 : g.credits),
+      0
+    );
+    const weightedPoints = grades.reduce(
+      (s, g) => s + g.gradePoints * g.credits,
+      0
+    );
+    const totalCredits = grades.reduce((s, g) => s + g.credits, 0);
+    const gpa = totalCredits > 0 ? weightedPoints / totalCredits : 0;
+    history.semesters.push({
+      semester: examMonth,
+      gpa: Math.round(gpa * 100) / 100,
+      credits: earnedCredits,
+      grades,
+    });
   }
 
   return history;
@@ -540,30 +596,40 @@ export function parseProfile(html: string): StudentProfile {
     bloodGroup: "",
   };
 
-  if (!html.toLowerCase().includes("personal information")) return profile;
+  // Registration number lives in a hidden input, not a table cell.
+  const regnoInput = $('input[name="regno"]').attr("value");
+  if (regnoInput) profile.registrationNumber = regnoInput.trim();
 
   const cells = $("td");
   for (let i = 0; i < cells.length - 1; i++) {
-    const key = $(cells[i]).text().trim().toLowerCase();
+    const key = $(cells[i]).text().trim().toLowerCase().replace(/\s+/g, " ");
     const value = $(cells[i + 1]).text().trim();
+    if (!value) continue;
 
-    if (key.includes("student") && key.includes("name")) {
+    // First-match semantics: don't overwrite once a field has been set. VTOP
+    // pages repeat similar labels in faculty/address sections, and the first
+    // occurrence is the student's own personal info block.
+    if (!profile.name && key === "student name") {
       profile.name = value;
-    } else if (key.includes("register") && key.includes("number")) {
-      profile.registrationNumber = value;
-    } else if (key.includes("application") && key.includes("number")) {
+    } else if (!profile.applicationNumber && key === "application number") {
       profile.applicationNumber = value;
-    } else if (key.includes("programme") || key === "program") {
+    } else if (
+      !profile.program &&
+      (key === "programme" || key === "applied degree" || key === "degree")
+    ) {
       profile.program = value;
-    } else if (key.includes("branch")) {
+    } else if (
+      !profile.branch &&
+      (key === "branch" || key === "branch / group studied")
+    ) {
       profile.branch = value;
-    } else if (key.includes("school")) {
+    } else if (!profile.school && key === "school") {
       profile.school = value;
-    } else if (key.includes("e-mail") || key.includes("email")) {
+    } else if (!profile.email && key === "email") {
       profile.email = value;
-    } else if (key.includes("mobile") || key.includes("phone")) {
+    } else if (!profile.phone && key === "mobile number") {
       profile.phone = value;
-    } else if (key.includes("blood")) {
+    } else if (!profile.bloodGroup && key === "blood group") {
       profile.bloodGroup = value;
     }
   }

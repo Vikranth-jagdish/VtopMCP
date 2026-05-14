@@ -54,18 +54,30 @@ export class VtopClient {
   /**
    * Step 1: Load the landing page and call prelogin/setup to initialize session.
    * This mirrors the Android app's flow: GET /vtop/login then POST /vtop/prelogin/setup
+   *
+   * The landing page is a portal selector (Student/Employee/Parent/Alumni). It
+   * has no captcha. POSTing prelogin/setup with flag=VTOP returns the actual
+   * student login page, which embeds the captcha image.
    */
   private async initSession(): Promise<string> {
     // Reset state
     this.authenticated = false;
     this.authorizedID = null;
 
-    // Load the landing page to get cookies
+    // Load the landing page (portal selector) to seed cookies + CSRF
     const landingRes = await this.client.get("/login");
-    const landingHtml: string = landingRes.data;
-    this.extractCsrf(landingHtml);
+    this.extractCsrf(landingRes.data);
 
-    return landingHtml;
+    // POST prelogin/setup with flag=VTOP to get the actual login page
+    const setupForm = new URLSearchParams();
+    setupForm.append("flag", "VTOP");
+    if (this.csrfToken) setupForm.append("_csrf", this.csrfToken);
+    const setupRes = await this.client.post("/prelogin/setup", setupForm, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+    const loginHtml: string = setupRes.data;
+    this.extractCsrf(loginHtml);
+    return loginHtml;
   }
 
   /**
@@ -289,6 +301,16 @@ export class VtopClient {
       });
 
       const html: string = res.data;
+
+      if (process.env.VTOP_DUMP_HTML && process.env.VTOP_DUMP_DIR) {
+        const fs = await import("node:fs/promises");
+        const path = await import("node:path");
+        const safe = endpoint.replace(/[^\w-]+/g, "_");
+        await fs.writeFile(
+          path.join(process.env.VTOP_DUMP_DIR, `${safe}.html`),
+          html
+        );
+      }
 
       // Detect session expiry or unauthorized access
       const lower = html.toLowerCase();
