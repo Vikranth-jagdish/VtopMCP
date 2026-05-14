@@ -1,17 +1,23 @@
 {
   "name": "vtop-mcp",
   "version": "1.0.0",
-  "description": "MCP server for VIT Chennai's VTOP student portal",
+  "description": "MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, ...).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "vtop-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
   },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -22,13 +28,33 @@
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-desktop",
     "vtop",
     "vit",
     "vit-chennai",
+    "vit-vellore",
+    "vit-ap",
+    "vit-bhopal",
     "attendance",
-    "timetable"
+    "timetable",
+    "cgpa"
   ],
+  "author": "Vikranth Jagdish <vicky@botcode.com>",
   "license": "MIT",
+  "homepage": "https://github.com/Vikranth-jagdish/VtopMCP#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vikranth-jagdish/VtopMCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vikranth-jagdish/VtopMCP/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "axios": "^1.7.0",

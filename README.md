@@ -1,125 +1,155 @@
-# VtopMCP
+# vtop-mcp
 
-MCP (Model Context Protocol) server for VIT Chennai's VTOP student portal. Enables AI agents to access student data like attendance, marks, timetable, grades, and more.
+> MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, …).
 
-Built by reverse-engineering the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) app's communication with VTOP.
+[![npm version](https://img.shields.io/npm/v/vtop-mcp.svg)](https://www.npmjs.com/package/vtop-mcp)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+Built by reverse-engineering the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) app's communication with VTOP. Talks to the live portal with cookies + CSRF + authorizedID, exactly like a browser would.
 
-- **Authentication**: Login with VTOP credentials + CAPTCHA (returned as image for multimodal agents)
-- **Semester Selection**: List available semesters and their IDs
-- **Attendance**: View attendance records for all courses
-- **Timetable**: View class schedule with courses, slots, venues, and faculty
-- **Marks**: View internal assessment marks with component-wise breakdown
-- **Exam Schedule**: View exam dates, timings, venues, and seat numbers
-- **Grade History**: View CGPA and total earned credits
-- **Semester Grades**: View grades for a specific semester with GPA
-- **Student Profile**: View profile information
+<!-- mcp-name: io.github.Vikranth-jagdish/vtop-mcp -->
 
-## Setup
+---
 
-### Prerequisites
+## Quick start (Claude Desktop)
 
-- Node.js 18+
-- npm
-
-### Install & Build
-
-```bash
-npm install
-npm run build
-```
-
-## Usage
-
-### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
+Add this block to `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_config.json`; macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "vtop": {
-      "command": "node",
-      "args": ["/absolute/path/to/VtopMCP/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "vtop-mcp"],
       "env": {
-        "VTOP_BASE_URL": "https://vtopcc.vit.ac.in/vtop"
+        "NODE_OPTIONS": "--use-system-ca",
+        "VTOP_USERNAME": "your-vtop-username",
+        "VTOP_PASSWORD": "your-vtop-password"
       }
     }
   }
 }
 ```
 
-### Claude Code
+Fully quit Claude Desktop (tray → Quit) and reopen. Then in a new chat, just say:
 
+> *"What's my attendance?"*
+
+The model will auto-fetch a captcha, OCR it, log in with your stored credentials, pick the current semester, and answer — without asking you anything.
+
+---
+
+## Other clients
+
+**Claude Code:**
 ```bash
-claude mcp add vtop node /absolute/path/to/VtopMCP/dist/index.js
+claude mcp add vtop -- npx -y vtop-mcp
 ```
 
-## Available Tools
+**Cursor / Windsurf / Cline / Zed** — same JSON shape as Claude Desktop, dropped into the client's MCP config file.
 
-| Tool | Description | Inputs |
-|------|-------------|--------|
-| `get_captcha` | Get CAPTCHA image for login | None |
-| `login` | Login with credentials + captcha | `username`, `password`, `captcha` |
-| `get_semesters` | List available semesters | None |
-| `get_attendance` | Get attendance records | `semesterId?` |
-| `get_timetable` | Get class timetable | `semesterId?` |
-| `get_marks` | Get internal marks | `semesterId?` |
-| `get_exam_schedule` | Get exam schedule | `semesterId?` |
-| `get_grade_history` | Get CGPA + total credits | None |
-| `get_semester_grades` | Get grades for a semester | `semesterId?` |
-| `get_profile` | Get student profile | None |
-| `logout` | Logout and clear session | None |
+---
 
-## Login Flow
+## Available tools (12)
 
-1. Call `get_captcha` — returns a CAPTCHA image
-2. Read the CAPTCHA text (multimodal agents like Claude can do this directly)
-3. Call `login` with your username, password, and captcha solution
-4. Call `get_semesters` to get available semester IDs
-5. Use any data tool with the semester ID to fetch student information
+| Tool | Args | Returns |
+|---|---|---|
+| `get_captcha` | — | Captcha image (the model OCRs it) |
+| `login` | `captcha`, `username?`, `password?` | Login result. User/pass optional when env vars are set. |
+| `logout` | — | Clears the session |
+| `get_semesters` | — | `[{id, name}]` of all available semesters |
+| `get_profile` | — | Name, regNo, program, branch, school, email, phone, blood group |
+| `get_attendance` | `semesterId?` | Per-course attended/total/percentage |
+| `get_timetable` | `semesterId?` | Courses, slots, venues, faculty, credits |
+| `get_marks` | `semesterId?` | Internal assessment components + weightages |
+| `get_exam_schedule` | `semesterId?` | CAT-1 / CAT-2 / FAT dates, venues, seat numbers |
+| `get_semester_grades` | `semesterId?` | Course-wise grades + GPA |
+| `get_grade_history` | — | CGPA, total credits, per-semester GPA + courses |
+| `get_curriculum_progress` | — | Credits earned vs required, per-category, per-basket, grade-letter counts |
 
-## Supported Campuses
+All per-semester tools auto-pick the current semester if `semesterId` is omitted. The server probes the timetable for the 3 most recent semesters to find one with real course data (skips Summer Term when you're not enrolled).
 
-| Campus | Base URL |
-|--------|----------|
+---
+
+## Environment variables
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `VTOP_USERNAME` | Recommended | — | Auto-login username. If unset, the model will ask for it the first time. |
+| `VTOP_PASSWORD` | Recommended | — | Auto-login password. If unset, the model will ask. |
+| `NODE_OPTIONS` | Recommended on Windows | — | Set to `--use-system-ca` so Node trusts VIT's TLS chain via the OS store. Without this you'll see `unable to verify the first certificate`. |
+| `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
+
+### Supported campuses
+
+| Campus | `VTOP_BASE_URL` |
+|---|---|
 | VIT Chennai (default) | `https://vtopcc.vit.ac.in/vtop` |
 | VIT Vellore | `https://vtop.vit.ac.in/vtop` |
 | VIT-AP | `https://vtop.vitap.ac.in/vtop` |
 | VIT Bhopal | `https://vtop.vitbhopal.ac.in/vtop` |
 
-Set via `VTOP_BASE_URL` environment variable.
+---
 
-## VTOP Endpoints Used
+## Security
 
-Based on the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) source code:
+Credentials in the `env` block of `claude_desktop_config.json` are stored in plaintext on disk, in your user's `%APPDATA%`. Only your OS user can read them. They are passed to the spawned `node` child process at startup and never traverse the network except to VTOP itself — they do not go to Anthropic, npm, or anywhere else.
 
-| Feature | Method | Endpoint |
-|---------|--------|----------|
-| Login page | GET | `/login` |
-| Submit login | POST | `/login` |
-| Semesters | POST | `academics/common/StudentTimeTableChn` |
-| Timetable | POST | `processViewTimeTable` |
-| Attendance | POST | `processViewStudentAttendance` |
-| Marks | POST | `examinations/doStudentMarkView` |
-| Grade History | POST | `examinations/examGradeView/StudentGradeHistory` |
-| Semester Grades | POST | `examinations/examGradeView/doStudentGradeView` |
-| Exam Schedule | POST | `examinations/doSearchExamScheduleForStudent` |
-| Profile | POST | `studentsRecord/StudentProfileAllView` |
+The MCP server is a local stdio process; there's no listening port, no remote endpoint. Session cookies live in memory only and are cleared when Claude Desktop restarts.
+
+---
+
+## Troubleshooting
+
+**`unable to verify the first certificate`** — set `NODE_OPTIONS: "--use-system-ca"` in the `env` block. Node ≥ 22 needs the explicit flag to trust the OS CA store on Windows.
+
+**"It seems there are no attendance records"** — almost always a stale spawned MCP process. Quit Claude Desktop fully (tray → Quit, not just the X), then reopen.
+
+**Login keeps failing** — likely captcha misread. The model fetches a fresh one and retries automatically (up to 3 tries). After that, check the credentials in your `env` block.
+
+**Empty results when classes are running** — VTOP HTML occasionally changes. Open an issue with a sanitized HTML snippet from the affected endpoint.
+
+---
 
 ## Development
 
 ```bash
-npm run dev    # Watch mode - rebuilds on changes
-npm run build  # Production build
-npm start      # Run the server
+git clone https://github.com/Vikranth-jagdish/VtopMCP
+cd VtopMCP
+npm install
+npm run build
+npm run test:mcp          # spawns dist/index.js, checks the wire protocol
+npm run test:e2e          # interactive: solves a captcha and exercises every tool
 ```
 
-## Note
+Local `claude_desktop_config.json` for dev: point `command` at `node` and `args` at the absolute path to your `dist/index.js` instead of `npx`.
 
-The HTML parsing logic is based on the DOM selectors used in the Android app. Since VTOP's HTML can change, you may need to update the parsers in `src/services/vtop-parser.ts`. The endpoint URLs and form field names are in `src/services/vtop-client.ts`.
+### Project layout
+
+```
+src/
+├── index.ts              stdio transport entry
+├── server.ts             registers all 12 tools
+├── services/
+│   ├── vtop-client.ts    HTTP client, cookie jar, login flow, semester probe
+│   ├── vtop-parser.ts    cheerio HTML → JSON parsers
+│   └── constants.ts      endpoints, error strings, grade letters
+├── tools/                one file per tool group
+└── schemas/index.ts      Zod input schemas
+```
+
+---
+
+## How it works (high level)
+
+1. **Login is a 3-step dance.** `/vtop/login` is a portal selector page (Student/Employee/Parent/Alumni) with no captcha. POSTing to `/prelogin/setup?flag=VTOP` (after grabbing the CSRF token) returns the actual student login page, which embeds a base64 captcha. We POST credentials + captcha back to `/login`; a hidden `<input id="authorizedIDX">` in the response is the session token used for every subsequent request.
+2. **All data tools POST** to endpoints like `processViewStudentAttendance` with `authorizedID`, `_csrf`, and `semesterSubId`. Responses are HTML; cheerio extracts the relevant tables.
+3. **Auto-semester selection** probes the timetable for the three most recent terms and picks the first with real course rows — so it handles students not enrolled in Summer Term.
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+The HTML parsing logic is adapted from the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) source under its respective license. This project is not affiliated with VIT.
