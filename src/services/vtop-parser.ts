@@ -10,7 +10,84 @@ import type {
   Semester,
   CurriculumProgress,
   CurriculumProgressRow,
+  GradeDistribution,
 } from "../types/index.js";
+import { GRADE_LETTERS, GRADE_POINTS } from "./constants.js";
+
+/**
+ * Compute creditsRemaining (clamped ≥ 0) and percentComplete (rounded to
+ * 1 decimal) for a curriculum row. Shared by every place we build a
+ * CurriculumProgressRow or the top-level totals.
+ */
+function progressMetrics(
+  required: number,
+  earned: number
+): { creditsRemaining: number; percentComplete: number } {
+  return {
+    creditsRemaining: Math.max(0, required - earned),
+    percentComplete:
+      required > 0
+        ? Math.round((earned / required) * 1000) / 10
+        : earned > 0
+          ? 100
+          : 0,
+  };
+}
+
+/**
+ * Locate and parse the post-login CGPA summary table whose header row is
+ * `Credits Registered | Credits Earned | CGPA | S Grades | A Grades | ...`.
+ * Used by both grade-history and curriculum-progress parsers.
+ */
+function parseCgpaSummary(
+  $: cheerio.CheerioAPI
+): {
+  creditsRegistered: number;
+  creditsEarned: number;
+  cgpa: number;
+  gradeDistribution: GradeDistribution;
+} | null {
+  const empty: GradeDistribution = {
+    S: 0,
+    A: 0,
+    B: 0,
+    C: 0,
+    D: 0,
+    E: 0,
+    F: 0,
+    N: 0,
+  };
+  const tables = $("table");
+  for (let i = tables.length - 1; i >= 0; i--) {
+    const $table = $(tables[i]);
+    const headerRow = $table.find("tr").first();
+    const headerCells = headerRow.find("td");
+    const headerText = headerRow.text().toLowerCase();
+    if (!headerText.includes("credits") || !headerText.includes("cgpa")) {
+      continue;
+    }
+    const headers: string[] = headerCells
+      .map((_j, el) => $(el).text().trim().toLowerCase())
+      .get();
+    const valueCells = $table.find("td").slice(headerCells.length);
+    const get = (predicate: (h: string) => boolean): number => {
+      const idx = headers.findIndex(predicate);
+      if (idx < 0 || idx >= valueCells.length) return 0;
+      return parseFloat($(valueCells[idx]).text().trim()) || 0;
+    };
+    const gradeDistribution: GradeDistribution = { ...empty };
+    for (const L of GRADE_LETTERS) {
+      gradeDistribution[L] = get((h) => h.startsWith(L.toLowerCase() + " grade"));
+    }
+    return {
+      creditsRegistered: get((h) => h.includes("credits registered")),
+      creditsEarned: get((h) => h.includes("credits earned") || h.includes("earned")),
+      cgpa: get((h) => h === "cgpa"),
+      gradeDistribution,
+    };
+  }
+  return null;
+}
 
 /**
  * Parse semester dropdown from the timetable page.
@@ -401,23 +478,6 @@ export function parseExamSchedule(html: string): ExamSchedule[] {
   return schedules;
 }
 
-/**
- * Parse grade history from examinations/examGradeView/StudentGradeHistory.
- *
- * Android app: Last table with heading containing 'credits'.
- * Extracts 'earned' credits and 'cgpa' from the second row.
- */
-const GRADE_POINTS: Record<string, number> = {
-  S: 10,
-  A: 9,
-  B: 8,
-  C: 7,
-  D: 6,
-  E: 5,
-  F: 0,
-  N: 0,
-};
-
 export function parseGradeHistory(html: string): GradeHistory {
   const $ = cheerio.load(html);
   const history: GradeHistory = {
@@ -426,33 +486,10 @@ export function parseGradeHistory(html: string): GradeHistory {
     totalCredits: 0,
   };
 
-  // Pull CGPA + total credits from the summary table whose header row contains
-  // "Credits Registered / Credits Earned / CGPA / S Grades / ...".
-  const tables = $("table");
-  for (let i = tables.length - 1; i >= 0; i--) {
-    const table = $(tables[i]);
-    const firstRowCells = table.find("tr").first().find("td");
-    const firstCellText = firstRowCells.first().text().toLowerCase();
-    if (firstCellText.includes("credits")) {
-      let creditsIdx = -1;
-      let cgpaIdx = -1;
-      firstRowCells.each((j, el) => {
-        const text = $(el).text().toLowerCase();
-        if (text.includes("earned")) creditsIdx = j;
-        if (text.includes("cgpa")) cgpaIdx = j;
-      });
-      const allCells = table.find("td");
-      const headingCount = firstRowCells.length;
-      if (creditsIdx >= 0 && creditsIdx + headingCount < allCells.length) {
-        history.totalCredits =
-          parseFloat($(allCells[creditsIdx + headingCount]).text()) || 0;
-      }
-      if (cgpaIdx >= 0 && cgpaIdx + headingCount < allCells.length) {
-        history.cgpa =
-          parseFloat($(allCells[cgpaIdx + headingCount]).text()) || 0;
-      }
-      break;
-    }
+  const summary = parseCgpaSummary($);
+  if (summary) {
+    history.cgpa = summary.cgpa;
+    history.totalCredits = summary.creditsEarned;
   }
 
   // Walk the "Effective Grades" table for per-course rows, then group by
@@ -477,7 +514,7 @@ export function parseGradeHistory(html: string): GradeHistory {
       courseType,
       credits,
       grade,
-      gradePoints: GRADE_POINTS[grade] ?? 0,
+      gradePoints: (GRADE_POINTS as Record<string, number>)[grade] ?? 0,
     };
     const bucket = grouped.get(examMonth) ?? [];
     bucket.push(record);
@@ -652,6 +689,23 @@ export function parseProfile(html: string): StudentProfile {
  * Robust to surrounding markup changes by matching tables on their header
  * cell text rather than DOM position.
  */
+function buildProgressRow(
+  name: string,
+  required: number,
+  earned: number,
+  distributionType?: string
+): CurriculumProgressRow {
+  const m = progressMetrics(required, earned);
+  return {
+    name,
+    ...(distributionType !== undefined ? { distributionType } : {}),
+    creditsRequired: required,
+    creditsEarned: earned,
+    creditsRemaining: m.creditsRemaining,
+    percentComplete: m.percentComplete,
+  };
+}
+
 export function parseCurriculumProgress(html: string): CurriculumProgress {
   const $ = cheerio.load(html);
 
@@ -669,13 +723,10 @@ export function parseCurriculumProgress(html: string): CurriculumProgress {
     gradeDistribution: { S: 0, A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, N: 0 },
   };
 
-  const tables = $("table");
-
-  tables.each((_i, tableEl) => {
+  $("table").each((_i, tableEl) => {
     const $table = $(tableEl);
     const headerText = $table.find("tr").first().text().toLowerCase();
 
-    // Curriculum Details table
     if (headerText.includes("curriculum details")) {
       $table.find("tr.tableContent, tr.fixedContent").each((_j, tr) => {
         const cells = $(tr).find("td");
@@ -688,23 +739,10 @@ export function parseCurriculumProgress(html: string): CurriculumProgress {
           progress.totals.creditsEarned = earned;
           return;
         }
-        const row: CurriculumProgressRow = {
-          name,
-          creditsRequired: required,
-          creditsEarned: earned,
-          creditsRemaining: Math.max(0, required - earned),
-          percentComplete:
-            required > 0
-              ? Math.round((earned / required) * 1000) / 10
-              : earned > 0
-                ? 100
-                : 0,
-        };
-        progress.distributionTypes.push(row);
+        progress.distributionTypes.push(buildProgressRow(name, required, earned));
       });
     }
 
-    // Basket Details table
     if (headerText.includes("basket details")) {
       $table.find("tr.tableContent").each((_j, tr) => {
         const cells = $(tr).find("td");
@@ -713,74 +751,26 @@ export function parseCurriculumProgress(html: string): CurriculumProgress {
         const distributionType = $(cells[1]).text().trim();
         const required = parseFloat($(cells[2]).text().trim()) || 0;
         const earned = parseFloat($(cells[3]).text().trim()) || 0;
-        progress.baskets.push({
-          name,
-          distributionType,
-          creditsRequired: required,
-          creditsEarned: earned,
-          creditsRemaining: Math.max(0, required - earned),
-          percentComplete:
-            required > 0
-              ? Math.round((earned / required) * 1000) / 10
-              : earned > 0
-                ? 100
-                : 0,
-        });
-      });
-    }
-
-    // CGPA summary table (header includes "Credits Registered ... CGPA ... S Grades ...")
-    const firstRowCells = $table.find("tr").first().find("td");
-    const firstCellText = firstRowCells.first().text().toLowerCase();
-    if (
-      firstCellText.includes("credits registered") ||
-      (firstCellText.includes("credits") &&
-        $table.find("tr").first().text().toLowerCase().includes("cgpa"))
-    ) {
-      const headerByIndex: string[] = [];
-      firstRowCells.each((j, el) => {
-        headerByIndex[j] = $(el).text().trim().toLowerCase();
-      });
-      const valueCells = $table.find("td").slice(firstRowCells.length);
-      firstRowCells.each((j) => {
-        const h = headerByIndex[j];
-        const raw = $(valueCells[j]).text().trim();
-        const num = parseFloat(raw);
-        if (h.includes("credits registered"))
-          progress.totals.creditsRegistered = num || 0;
-        else if (h === "cgpa") progress.totals.cgpa = num || 0;
-        else if (h.startsWith("s grade"))
-          progress.gradeDistribution.S = num || 0;
-        else if (h.startsWith("a grade"))
-          progress.gradeDistribution.A = num || 0;
-        else if (h.startsWith("b grade"))
-          progress.gradeDistribution.B = num || 0;
-        else if (h.startsWith("c grade"))
-          progress.gradeDistribution.C = num || 0;
-        else if (h.startsWith("d grade"))
-          progress.gradeDistribution.D = num || 0;
-        else if (h.startsWith("e grade"))
-          progress.gradeDistribution.E = num || 0;
-        else if (h.startsWith("f grade"))
-          progress.gradeDistribution.F = num || 0;
-        else if (h.startsWith("n grade"))
-          progress.gradeDistribution.N = num || 0;
+        progress.baskets.push(
+          buildProgressRow(name, required, earned, distributionType)
+        );
       });
     }
   });
 
-  // Compute remaining/percent on totals
-  progress.totals.creditsRemaining = Math.max(
-    0,
-    progress.totals.creditsRequired - progress.totals.creditsEarned
+  const summary = parseCgpaSummary($);
+  if (summary) {
+    progress.totals.creditsRegistered = summary.creditsRegistered;
+    progress.totals.cgpa = summary.cgpa;
+    progress.gradeDistribution = summary.gradeDistribution;
+  }
+
+  const totalsMetrics = progressMetrics(
+    progress.totals.creditsRequired,
+    progress.totals.creditsEarned
   );
-  progress.totals.percentComplete =
-    progress.totals.creditsRequired > 0
-      ? Math.round(
-          (progress.totals.creditsEarned / progress.totals.creditsRequired) *
-            1000
-        ) / 10
-      : 0;
+  progress.totals.creditsRemaining = totalsMetrics.creditsRemaining;
+  progress.totals.percentComplete = totalsMetrics.percentComplete;
 
   return progress;
 }

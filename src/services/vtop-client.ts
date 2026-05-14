@@ -1,8 +1,28 @@
 import axios, { AxiosInstance } from "axios";
 import { wrapper } from "axios-cookiejar-support";
 import { CookieJar } from "tough-cookie";
+import {
+  COURSE_CODE_PATTERN,
+  ENDPOINTS,
+  NOT_AUTH_MSG,
+  SESSION_EXPIRED_MSG,
+} from "./constants.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
+
+const AUTH_ID_RE =
+  /id="authorizedIDX"\s+value="([^"]+)"|value="([^"]+)"\s+id="authorizedIDX"/;
+
+const CSRF_RE =
+  /name="_csrf"\s+(?:content|value)="([^"]+)"|value="([^"]+)"\s+name="_csrf"/;
+
+/**
+ * Maximum semesters to probe when auto-detecting the active term. VIT runs
+ * Fall / Winter / Summer; the active term is always one of the three most
+ * recent dropdown entries. Bounds worst-case latency on first data call to
+ * ~3 × one round-trip.
+ */
+const MAX_PROBE_SEMESTERS = 3;
 
 export class VtopClient {
   private client: AxiosInstance;
@@ -10,8 +30,8 @@ export class VtopClient {
   private authenticated = false;
   private csrfToken: string | null = null;
   private authorizedID: string | null = null;
-  private cachedSemesters: { id: string; name: string }[] | null = null;
   private cachedActiveSemesterId: string | null = null;
+  private cachedGradeHistoryHtml: string | null = null;
 
   constructor(baseUrl?: string) {
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
@@ -40,73 +60,63 @@ export class VtopClient {
     return this.authenticated;
   }
 
-  /**
-   * Extract CSRF token from HTML response.
-   * VTOP includes it as: <input type="hidden" name="_csrf" value="...">
-   */
   private extractCsrf(html: string): void {
-    const match = html.match(
-      /name="_csrf"\s+(?:content|value)="([^"]+)"|value="([^"]+)"\s+name="_csrf"/
-    );
-    if (match) {
-      this.csrfToken = match[1] ?? match[2];
-    }
+    const match = html.match(CSRF_RE);
+    if (match) this.csrfToken = match[1] ?? match[2];
   }
 
   /**
-   * Step 1: Load the landing page and call prelogin/setup to initialize session.
-   * This mirrors the Android app's flow: GET /vtop/login then POST /vtop/prelogin/setup
-   *
-   * The landing page is a portal selector (Student/Employee/Parent/Alumni). It
-   * has no captcha. POSTing prelogin/setup with flag=VTOP returns the actual
-   * student login page, which embeds the captcha image.
+   * Extract authorizedID from a post-login response and, if found, also
+   * refresh the CSRF token from the same HTML. Returns true on success.
+   */
+  private absorbAuthFromHtml(html: string): boolean {
+    const match = html.match(AUTH_ID_RE);
+    if (!match) return false;
+    this.authorizedID = match[1] ?? match[2];
+    this.authenticated = true;
+    this.extractCsrf(html);
+    return true;
+  }
+
+  /**
+   * The /vtop/login page is a portal selector (Student/Employee/Parent/
+   * Alumni) with no captcha. To reach the actual login page we GET it for
+   * cookies, then POST /prelogin/setup?flag=VTOP to receive the student
+   * login HTML (which embeds the captcha image).
    */
   private async initSession(): Promise<string> {
-    // Reset state
     this.authenticated = false;
     this.authorizedID = null;
 
-    // Load the landing page (portal selector) to seed cookies + CSRF
     const landingRes = await this.client.get("/login");
     this.extractCsrf(landingRes.data);
 
-    // POST prelogin/setup with flag=VTOP to get the actual login page
     const setupForm = new URLSearchParams();
     setupForm.append("flag", "VTOP");
     if (this.csrfToken) setupForm.append("_csrf", this.csrfToken);
     const setupRes = await this.client.post("/prelogin/setup", setupForm, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
-    const loginHtml: string = setupRes.data;
-    this.extractCsrf(loginHtml);
-    return loginHtml;
+    this.extractCsrf(setupRes.data);
+    return setupRes.data;
   }
 
   /**
-   * Get CAPTCHA image as base64 string.
-   * The VTOP login page embeds the captcha as a base64 <img> inside #captchaBlock.
+   * Fetch the login page and pull the embedded base64 captcha out of it.
+   * The Android app does the equivalent of $('#captchaBlock img').src.
    */
   async getCaptcha(): Promise<string> {
     const html = await this.initSession();
 
-    // Extract captcha image from: <img src="data:image/png;base64,..." /> inside #captchaBlock
-    // The Android app does: $('#captchaBlock img').get(0).src
     const captchaMatch = html.match(
       /id="captchaBlock"[^>]*>[\s\S]*?<img[^>]+src="(data:image\/[^;]+;base64,[^"]+)"/
     );
+    if (captchaMatch) return captchaMatch[1];
 
-    if (captchaMatch) {
-      return captchaMatch[1];
-    }
-
-    // Fallback: look for any base64 image in the page that looks like a captcha
     const imgMatch = html.match(
       /<img[^>]+src="(data:image\/(?:png|jpeg|jpg);base64,[A-Za-z0-9+/=]+)"/
     );
-
-    if (imgMatch) {
-      return imgMatch[1];
-    }
+    if (imgMatch) return imgMatch[1];
 
     throw new Error(
       "Could not find captcha image on login page. The page structure may have changed."
@@ -114,13 +124,9 @@ export class VtopClient {
   }
 
   /**
-   * Login to VTOP with username, password, and captcha solution.
-   *
-   * The Android app submits: POST /vtop/login with form fields:
-   *   username, password, captchaStr, gResponse, _csrf
-   *
-   * On success, the response contains an input with id="authorizedIDX"
-   * which is needed for all subsequent requests.
+   * Submit credentials + captcha. On success the response contains a hidden
+   * <input id="authorizedIDX"> whose value is required on every subsequent
+   * authenticated POST. VTOP also rotates the CSRF token here.
    */
   async login(
     username: string,
@@ -132,30 +138,18 @@ export class VtopClient {
     formData.append("password", password);
     formData.append("captchaStr", captcha);
     formData.append("gResponse", captcha);
-    if (this.csrfToken) {
-      formData.append("_csrf", this.csrfToken);
-    }
+    if (this.csrfToken) formData.append("_csrf", this.csrfToken);
 
     try {
       const res = await this.client.post("/login", formData, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
-
       const html: string = res.data;
 
-      // Check for login success: presence of authorizedIDX hidden input
-      const authMatch = html.match(
-        /id="authorizedIDX"\s+value="([^"]+)"|value="([^"]+)"\s+id="authorizedIDX"/
-      );
-
-      if (authMatch) {
-        this.authorizedID = authMatch[1] ?? authMatch[2];
-        this.authenticated = true;
-        this.extractCsrf(html);
+      if (this.absorbAuthFromHtml(html)) {
         return { success: true, message: "Successfully logged in to VTOP." };
       }
 
-      // Check specific error patterns (from Android app's regex patterns)
       const lower = html.toLowerCase();
       if (/invalid\s*captcha/.test(lower)) {
         return {
@@ -164,11 +158,12 @@ export class VtopClient {
             "Invalid captcha. Call get_captcha again and retry with the new captcha.",
         };
       }
-      if (/invalid\s*(user\s*name|login\s*id|user\s*id)\s*\/\s*password/.test(lower)) {
-        return {
-          success: false,
-          message: "Invalid username or password.",
-        };
+      if (
+        /invalid\s*(user\s*name|login\s*id|user\s*id)\s*\/\s*password/.test(
+          lower
+        )
+      ) {
+        return { success: false, message: "Invalid username or password." };
       }
       if (/account\s*is\s*locked/.test(lower)) {
         return {
@@ -184,22 +179,15 @@ export class VtopClient {
         };
       }
 
-      // If we got redirected to a page with authorizedIDX via content load
-      // Try loading /content page to get the home page
+      // Some VTOP deployments redirect post-login through /content rather
+      // than returning the home page inline; try that as a fallback.
       try {
         const contentRes = await this.client.get("/content");
-        const contentHtml: string = contentRes.data;
-        const contentAuthMatch = contentHtml.match(
-          /id="authorizedIDX"\s+value="([^"]+)"|value="([^"]+)"\s+id="authorizedIDX"/
-        );
-        if (contentAuthMatch) {
-          this.authorizedID = contentAuthMatch[1] ?? contentAuthMatch[2];
-          this.authenticated = true;
-          this.extractCsrf(contentHtml);
+        if (this.absorbAuthFromHtml(contentRes.data)) {
           return { success: true, message: "Successfully logged in to VTOP." };
         }
       } catch {
-        // Ignore content page errors
+        /* ignore */
       }
 
       this.authenticated = false;
@@ -215,34 +203,27 @@ export class VtopClient {
     }
   }
 
-  /** Logout and clear session */
   async logout(): Promise<void> {
     try {
       await this.client.get("/processLogout");
     } catch {
-      // Ignore logout errors
+      /* ignore */
     }
     this.authenticated = false;
     this.authorizedID = null;
     this.csrfToken = null;
-    this.cachedSemesters = null;
     this.cachedActiveSemesterId = null;
+    this.cachedGradeHistoryHtml = null;
   }
 
   /**
-   * Return the semester the student is actively enrolled in.
+   * Auto-detect the semester the student is actively enrolled in.
    *
-   * Important: cannot just pick semesters[0]. VIT runs three terms (Fall,
-   * Winter, Summer); the dropdown is ordered most-recent-first regardless
-   * of whether the student is enrolled in that term. Summer Term (≈May–
-   * July) exists primarily for arrears, so many students see Summer at
-   * index 0 but have no courses in it.
-   *
-   * Strategy: walk newest → oldest, probe the timetable endpoint for each,
-   * and return the first semester whose timetable HTML actually contains
-   * course rows (matched by VIT's `B<DEPT><NUM><L|P|E>` course-code
-   * pattern, e.g. BCSE302L). Cache the answer so subsequent tool calls in
-   * the same session pay zero probe cost.
+   * Cannot just pick semesters[0]: VIT's dropdown lists Fall/Winter/Summer
+   * regardless of enrolment, and Summer Term (≈May–July) is mostly arrears
+   * so many students see it at index 0 with nothing in it. Probe the
+   * timetable for each of the most recent few semesters and return the
+   * first that has real course rows. Cached for the rest of the session.
    */
   async getCurrentSemesterId(): Promise<string> {
     if (this.cachedActiveSemesterId) return this.cachedActiveSemesterId;
@@ -252,61 +233,62 @@ export class VtopClient {
       throw new Error("No semesters available on VTOP for this account.");
     }
 
-    const COURSE_CODE_PATTERN = /\b[A-Z]{3,5}\d{3,4}[A-Z]?\b/;
-    for (const sem of semesters) {
+    for (const sem of semesters.slice(0, MAX_PROBE_SEMESTERS)) {
       try {
-        const html = await this.postWithAuth("processViewTimeTable", {
+        const html = await this.postWithAuth(ENDPOINTS.timetable, {
           semesterSubId: sem.id,
         });
         if (COURSE_CODE_PATTERN.test(html)) {
           this.cachedActiveSemesterId = sem.id;
           return sem.id;
         }
-      } catch {
-        // Probe failure on one semester shouldn't block trying the rest.
+      } catch (err) {
+        // Probe failures usually mean session expiry — propagate so the
+        // caller can recover via re-login rather than silently picking the
+        // wrong semester.
+        if (err instanceof Error && err.message.startsWith("NOT_AUTHENTICATED")) {
+          throw err;
+        }
       }
     }
 
-    // Nothing had data (very early in a fresh term, or admin issue).
-    // Fall back to the newest entry so the caller gets a usable id.
     this.cachedActiveSemesterId = semesters[0].id;
     return semesters[0].id;
   }
 
-  /**
-   * Get list of available semesters.
-   * Uses the timetable page to extract semester dropdown options.
-   * Endpoint: POST academics/common/StudentTimeTableChn
-   */
   async getSemesters(): Promise<{ id: string; name: string }[]> {
     this.ensureAuthenticated();
-
-    const html = await this.postWithAuth(
-      "academics/common/StudentTimeTableChn",
-      { verifyMenu: "true", nocache: String(Date.now()) }
-    );
+    const html = await this.postWithAuth(ENDPOINTS.timetableForSemesters, {
+      verifyMenu: "true",
+      nocache: String(Date.now()),
+    });
 
     const semesters: { id: string; name: string }[] = [];
-    const optionRegex =
-      /<option\s+value="([^"]*)"[^>]*>([^<]+)<\/option>/gi;
+    const optionRegex = /<option\s+value="([^"]*)"[^>]*>([^<]+)<\/option>/gi;
     let match;
-
     while ((match = optionRegex.exec(html)) !== null) {
       const id = match[1].trim();
       const name = match[2].trim();
-      if (id) {
-        semesters.push({ id, name });
-      }
+      if (id) semesters.push({ id, name });
     }
-
-    this.cachedSemesters = semesters;
     return semesters;
   }
 
   /**
-   * Fetch an authenticated page with POST.
-   * Automatically includes authorizedID, _csrf, and semesterSubId.
+   * Fetch grade-history HTML, caching it for the rest of the session.
+   * Both get_grade_history and get_curriculum_progress parse this same
+   * response, so we don't want to hit VTOP twice when chained.
    */
+  async getGradeHistoryHtml(): Promise<string> {
+    if (this.cachedGradeHistoryHtml) return this.cachedGradeHistoryHtml;
+    const html = await this.fetchPage(ENDPOINTS.gradeHistory, {
+      verifyMenu: "true",
+      nocache: String(Date.now()),
+    });
+    this.cachedGradeHistoryHtml = html;
+    return html;
+  }
+
   async fetchPage(
     endpoint: string,
     payload?: Record<string, string>
@@ -317,27 +299,17 @@ export class VtopClient {
 
   private ensureAuthenticated(): void {
     if (!this.authenticated || !this.authorizedID) {
-      throw new Error(
-        "NOT_AUTHENTICATED: No active VTOP session. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool."
-      );
+      throw new Error(NOT_AUTH_MSG);
     }
   }
 
-  /**
-   * POST to a VTOP endpoint with standard auth parameters.
-   * All VTOP data requests use:
-   *   authorizedID, _csrf, and optionally semesterSubId + verifyMenu
-   */
   private async postWithAuth(
     endpoint: string,
     extraParams?: Record<string, string>
   ): Promise<string> {
     const formData = new URLSearchParams();
     formData.append("authorizedID", this.authorizedID!);
-    if (this.csrfToken) {
-      formData.append("_csrf", this.csrfToken);
-    }
-
+    if (this.csrfToken) formData.append("_csrf", this.csrfToken);
     if (extraParams) {
       for (const [key, value] of Object.entries(extraParams)) {
         formData.append(key, value);
@@ -348,7 +320,6 @@ export class VtopClient {
       const res = await this.client.post(endpoint, formData, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
-
       const html: string = res.data;
 
       if (process.env.VTOP_DUMP_HTML && process.env.VTOP_DUMP_DIR) {
@@ -361,26 +332,20 @@ export class VtopClient {
         );
       }
 
-      // Detect session expiry or unauthorized access
       const lower = html.toLowerCase();
       if (
         lower.includes("not authorized") ||
         lower.includes("session expired") ||
-        lower.includes("vtopLoginForm")
+        lower.includes("vtoploginform")
       ) {
         this.authenticated = false;
         this.authorizedID = null;
-        throw new Error(
-          "NOT_AUTHENTICATED: VTOP session expired. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool."
-        );
+        throw new Error(SESSION_EXPIRED_MSG);
       }
 
       return html;
     } catch (err: unknown) {
-      if (
-        err instanceof Error &&
-        err.message.includes("Session expired")
-      ) {
+      if (err instanceof Error && err.message.startsWith("NOT_AUTHENTICATED")) {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);

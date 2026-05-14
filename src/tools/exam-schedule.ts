@@ -1,51 +1,29 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VtopClient } from "../services/vtop-client.js";
 import { parseExamSchedule } from "../services/vtop-parser.js";
+import { ENDPOINTS } from "../services/constants.js";
 import { SemesterInputSchema } from "../schemas/index.js";
+import { mkJsonTool } from "./_helpers.js";
 
 export function registerExamScheduleTool(
   server: McpServer,
   client: VtopClient
 ) {
-  server.tool(
+  mkJsonTool(
+    server,
     "get_exam_schedule",
     "Get exam schedule (CAT1/CAT2/FAT dates, timings, venues, seat numbers, row/col). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
-      try {
-        const id = semesterId ?? (await client.getCurrentSemesterId());
-        const html = await client.fetchPage(
-          "examinations/doSearchExamScheduleForStudent",
-          { semesterSubId: id }
-        );
-        const schedules = parseExamSchedule(html);
-
-        if (schedules.length === 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "No exam schedule found. The schedule may not have been published yet.",
-              },
-            ],
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(schedules, null, 2),
-            },
-          ],
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: "text" as const, text: `Error: ${msg}` }],
-          isError: true,
-        };
-      }
+      const id = semesterId ?? (await client.getCurrentSemesterId());
+      const html = await client.fetchPage(ENDPOINTS.examSchedule, {
+        semesterSubId: id,
+      });
+      return parseExamSchedule(html);
+    },
+    {
+      emptyMessage:
+        "No exam schedule found for this semester. It may not have been released yet.",
     }
   );
 }
