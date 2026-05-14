@@ -9,7 +9,7 @@ import { SemesterInputSchema, EmptySchema } from "../schemas/index.js";
 export function registerGradesTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_grade_history",
-    "Get cumulative grade history with CGPA and total earned credits across all semesters.",
+    "Get cumulative grade history (CGPA, total earned credits, per-semester GPA + courses + grades, grouped by exam month). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. Requires login.",
     EmptySchema.shape,
     async () => {
       try {
@@ -39,7 +39,7 @@ export function registerGradesTool(server: McpServer, client: VtopClient) {
 
   server.tool(
     "get_semester_grades",
-    "Get grades for a specific semester with course-wise grades and GPA. Requires semesterId from get_semesters.",
+    "Get grades for a specific semester (course-wise grades + GPA). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {

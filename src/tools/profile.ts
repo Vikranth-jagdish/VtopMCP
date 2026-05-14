@@ -6,7 +6,7 @@ import { EmptySchema } from "../schemas/index.js";
 export function registerProfileTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_profile",
-    "Get student profile information including name, registration number, program, branch, and contact details.",
+    "Get student profile (name, registration number, application number, program, branch, school, email, phone, blood group). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. Requires login.",
     EmptySchema.shape,
     async () => {
       try {

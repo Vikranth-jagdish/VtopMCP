@@ -6,7 +6,7 @@ import { SemesterInputSchema } from "../schemas/index.js";
 export function registerAttendanceTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_attendance",
-    "Get attendance records for all courses. Shows attended/total classes and percentage. Requires semesterId from get_semesters.",
+    "Get attendance records for all courses (attended/total/percentage per course). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {

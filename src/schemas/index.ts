@@ -1,9 +1,21 @@
 import { z } from "zod";
 
 export const LoginSchema = z.object({
-  username: z.string().describe("VTOP username / registration number"),
-  password: z.string().describe("VTOP password"),
-  captcha: z.string().describe("Captcha solution from the get_captcha tool"),
+  username: z
+    .string()
+    .optional()
+    .describe(
+      "VTOP username / registration number. Optional — if the MCP server has VTOP_USERNAME set as an env var, omit this and the server will use the stored value. Do not ask the user for credentials if they're already configured."
+    ),
+  password: z
+    .string()
+    .optional()
+    .describe(
+      "VTOP password. Optional — if the MCP server has VTOP_PASSWORD set as an env var, omit this and the server will use the stored value. Do not ask the user for credentials if they're already configured."
+    ),
+  captcha: z
+    .string()
+    .describe("Captcha solution from the get_captcha tool"),
 });
 
 export const SemesterInputSchema = z.object({

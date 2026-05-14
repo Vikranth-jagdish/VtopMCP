@@ -269,7 +269,7 @@ export class VtopClient {
   private ensureAuthenticated(): void {
     if (!this.authenticated || !this.authorizedID) {
       throw new Error(
-        "Not authenticated. Call get_captcha and login first."
+        "NOT_AUTHENTICATED: No active VTOP session. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool."
       );
     }
   }
@@ -322,7 +322,7 @@ export class VtopClient {
         this.authenticated = false;
         this.authorizedID = null;
         throw new Error(
-          "Session expired. Please call get_captcha and login again."
+          "NOT_AUTHENTICATED: VTOP session expired. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool."
         );
       }
 

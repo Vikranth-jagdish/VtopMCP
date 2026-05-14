@@ -5,7 +5,7 @@ import { LoginSchema, EmptySchema } from "../schemas/index.js";
 export function registerAuthTools(server: McpServer, client: VtopClient) {
   server.tool(
     "get_captcha",
-    "Get a CAPTCHA image for VTOP login. Returns a base64-encoded image that you can read visually. Call this before login.",
+    "Step 1 of login: fetch a CAPTCHA image from VTOP. Returns the image so you (the model) can OCR it. After this, immediately call `login` with the captcha text you read — do NOT ask the user to read it for you. The user only needs to be asked for credentials if VTOP_USERNAME / VTOP_PASSWORD are not set as env vars on the server.",
     EmptySchema.shape,
     async () => {
       try {
@@ -50,11 +50,29 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
 
   server.tool(
     "login",
-    "Login to VTOP with username, password, and captcha solution. Call get_captcha first.",
+    "Step 2 of login: submit credentials + the captcha you just OCR'd. Username/password are optional — if VTOP_USERNAME and VTOP_PASSWORD are set as env vars on the MCP server, omit them and the server uses the stored values. Only ask the user for credentials if the server reports they're not configured.",
     LoginSchema.shape,
     async ({ username, password, captcha }) => {
+      const effectiveUser = username ?? process.env.VTOP_USERNAME;
+      const effectivePass = password ?? process.env.VTOP_PASSWORD;
+      if (!effectiveUser || !effectivePass) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "Login failed: no credentials. The MCP server has no VTOP_USERNAME / VTOP_PASSWORD env vars configured, and none were passed in. Ask the user for their VTOP username and password, then call login again with them.",
+            },
+          ],
+          isError: true,
+        };
+      }
       try {
-        const result = await client.login(username, password, captcha);
+        const result = await client.login(
+          effectiveUser,
+          effectivePass,
+          captcha
+        );
         return {
           content: [{ type: "text" as const, text: result.message }],
           isError: !result.success,
@@ -73,7 +91,7 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
 
   server.tool(
     "get_semesters",
-    "Get list of available semesters with their IDs. Call after login to find the semesterId for other tools.",
+    "Get list of available semesters (id + name). Most data tools accept the semesterId, but they also default to the current semester if omitted — so you usually don't need to call this unless the user asks about a specific past semester. If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. Requires login.",
     EmptySchema.shape,
     async () => {
       try {

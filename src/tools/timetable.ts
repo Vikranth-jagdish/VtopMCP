@@ -6,7 +6,7 @@ import { SemesterInputSchema } from "../schemas/index.js";
 export function registerTimetableTool(server: McpServer, client: VtopClient) {
   server.tool(
     "get_timetable",
-    "Get class timetable/schedule with courses, slots, venues, and faculty. Requires semesterId from get_semesters.",
+    "Get class timetable/schedule (courses, slots, venues, faculty, credits). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {

@@ -9,7 +9,7 @@ export function registerExamScheduleTool(
 ) {
   server.tool(
     "get_exam_schedule",
-    "Get exam schedule with dates, timings, venues, and seat numbers. Requires semesterId from get_semesters.",
+    "Get exam schedule (CAT1/CAT2/FAT dates, timings, venues, seat numbers, row/col). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       try {
