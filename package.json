@@ -7,12 +7,18 @@
   "bin": {
     "vtop-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": ["mcp", "vtop", "vit"],
+  "keywords": ["mcp", "vtop", "vit", "vit-chennai", "attendance", "timetable"],
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
