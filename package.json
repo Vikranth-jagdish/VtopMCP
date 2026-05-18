@@ -52,8 +52,7 @@
     "url": "https://github.com/Vikranth-jagdish/VtopMCP/issues"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
