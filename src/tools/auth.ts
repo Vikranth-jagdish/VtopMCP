@@ -56,7 +56,7 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
             {
               type: "text" as const,
               text:
-                "Login failed: no credentials. The MCP server has no VTOP_USERNAME / VTOP_PASSWORD env vars configured, and none were passed in. Ask the user for their VTOP username and password, then call login again with them.",
+                "CREDENTIALS_REQUIRED: This server has no VTOP_USERNAME / VTOP_PASSWORD env vars set, and none were passed to login. Ask the user for their VTOP username and password now, then call login again with the username, password, and the SAME captcha (it has not been submitted yet, so it is still valid — no need to call get_captcha again).",
             },
           ],
           isError: true,
@@ -81,7 +81,7 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
   mkJsonTool(
     server,
     "get_semesters",
-    "Get list of available semesters (id + name). Most data tools accept the semesterId, but they also default to the current semester if omitted — so you usually don't need to call this unless the user asks about a specific past semester. If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. Requires login.",
+    "Get list of available semesters (id + name). Most data tools accept the semesterId, but they also default to the current semester if omitted — so you usually don't need to call this unless the user asks about a specific past semester. If the response contains NOT_AUTHENTICATED, immediately call get_captcha then login then retry this tool. login auto-uses VTOP_USERNAME/VTOP_PASSWORD env vars if set; if login replies that credentials are missing, ask the user for their VTOP username and password and call login again with them. Requires login.",
     EmptySchema.shape,
     async () => client.getSemesters(),
     { emptyMessage: "No semesters found. You may not be enrolled yet." }

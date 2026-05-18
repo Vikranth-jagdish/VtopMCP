@@ -12,7 +12,7 @@ export function registerExamScheduleTool(
   mkJsonTool(
     server,
     "get_exam_schedule",
-    "Get exam schedule (CAT1/CAT2/FAT dates, timings, venues, seat numbers, row/col). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
+    "Get exam schedule (CAT1/CAT2/FAT dates, timings, venues, seat numbers, row/col). If the response contains NOT_AUTHENTICATED, immediately call get_captcha then login then retry this tool. login auto-uses VTOP_USERNAME/VTOP_PASSWORD env vars if set; if login replies that credentials are missing, ask the user for their VTOP username and password and call login again with them. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       const id = semesterId ?? (await client.getCurrentSemesterId());

@@ -9,7 +9,7 @@ export function registerMarksTool(server: McpServer, client: VtopClient) {
   mkJsonTool(
     server,
     "get_marks",
-    "Get internal marks/assessment scores (component-wise marks, weightage, status). If the response contains NOT_AUTHENTICATED, immediately call get_captcha → login (no need to ask the user — credentials are pre-configured via env vars) and then retry this tool. semesterId is optional; omit for current semester. Requires login.",
+    "Get internal marks/assessment scores (component-wise marks, weightage, status). If the response contains NOT_AUTHENTICATED, immediately call get_captcha then login then retry this tool. login auto-uses VTOP_USERNAME/VTOP_PASSWORD env vars if set; if login replies that credentials are missing, ask the user for their VTOP username and password and call login again with them. semesterId is optional; omit for current semester. Requires login.",
     SemesterInputSchema.shape,
     async ({ semesterId }) => {
       const id = semesterId ?? (await client.getCurrentSemesterId());

@@ -21,11 +21,14 @@ export const ENDPOINTS = {
  * without an active session. The wording is deliberately directive — the
  * chat model uses this to decide to chain get_captcha → login → retry.
  */
+const RECOVERY_STEPS =
+  " To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha and WITHOUT username/password first (the server may have them as env vars). If login replies that no credentials are configured, ask the user for their VTOP username and password, then call login again with the captcha plus those credentials (you can reuse the same captcha — it was not submitted). Then retry this tool.";
+
 export const NOT_AUTH_MSG =
-  "NOT_AUTHENTICATED: No active VTOP session. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool.";
+  "NOT_AUTHENTICATED: No active VTOP session." + RECOVERY_STEPS;
 
 export const SESSION_EXPIRED_MSG =
-  "NOT_AUTHENTICATED: VTOP session expired. To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha (credentials are pre-configured via env vars if available — omit username/password and the server will use them). Then retry this tool.";
+  "NOT_AUTHENTICATED: VTOP session expired." + RECOVERY_STEPS;
 
 /** VIT course codes look like BCSE302L, BMGT105L, BFRE101L, etc. */
 export const COURSE_CODE_PATTERN = /\b[A-Z]{3,5}\d{3,4}[A-Z]?\b/;
