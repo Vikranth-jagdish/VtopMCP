@@ -5,6 +5,17 @@ This project follows [Semantic Versioning](https://semver.org/). While on
 `0.x`, minor/patch bumps may include parser-breaking changes whenever VIT
 alters VTOP's HTML.
 
+## [0.1.3] - 2026-05-18
+
+### Fixed
+- **`npx` still failed on Windows after 0.1.2.** The real cause was not the
+  bin name but the bin **file mode**: the published `dist/index.js` was
+  `0644` (not executable), so npm's bin-linking produced a broken Windows
+  shim. `tsup` emits the shebang but never sets `+x`. Windows `npm publish`
+  cannot write the POSIX exec bit into the tarball, so the package must be
+  published from the Linux GitHub Actions workflow, which now `chmod +x`'s
+  the bin. The `build` script also chmods locally for non-Windows dev.
+
 ## [0.1.2] - 2026-05-18
 
 ### Fixed

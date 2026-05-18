@@ -1,13 +1,20 @@
 name: Release to npm
 
-# Publishes vtop-mcp to npm whenever a git tag matching `v*` is pushed.
-# Uses Trusted Publishing (OIDC) — no NPM_TOKEN needed. You must first
-# configure the trusted publisher on npmjs.com pointing at this workflow.
+# Publishes @vikranth2005/vtop-mcp to npm when a tag matching `v*` is pushed.
+#
+# WHY CI AND NOT `npm publish` FROM A LAPTOP:
+# Windows cannot write the POSIX executable bit into the npm tarball, so a
+# bin published from Windows comes out mode 0644 and `npx` fails on other
+# Windows machines with "'<bin>' is not recognized". This Linux runner sets
+# the bit (chmod +x) and packs it correctly.
 #
 # Release flow:
-#   1. Bump version:     npm version patch     (creates a v1.0.1 tag locally)
-#   2. Push tag:         git push --follow-tags
-#   3. This workflow:    builds, smoke-tests, publishes with provenance.
+#   1. npm version patch          (bumps package.json, commits, tags vX.Y.Z)
+#   2. git push --follow-tags     (pushes the tag)
+#   3. this workflow              builds, chmods, smoke-tests, publishes
+#
+# Auth: add a repo secret NPM_TOKEN (npmjs.com → Access Tokens →
+# Generate New Token → "Automation"). That's the only setup required.
 
 on:
   push:
@@ -18,9 +25,6 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write   # required for npm OIDC / provenance
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +37,11 @@ jobs:
 
       - run: npm run build
 
+      # Belt-and-suspenders: guarantee the bin is executable in the tarball.
+      - run: chmod +x dist/index.js
+
       - run: npm run test:mcp
 
-      - run: npm publish --provenance --access public
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
