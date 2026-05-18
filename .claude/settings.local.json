@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(cat C:\\\\Projects\\\\VtopMCP\\\\.gitignore 2>NUL || echo \"NO_GITIGNORE\")",
-      "Bash(npm install *)"
-    ]
-  }
-}
