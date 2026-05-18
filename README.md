@@ -1,8 +1,8 @@
-# @vikranth/vtop-mcp
+# @vikranth2005/vtop-mcp
 
 > MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, …).
 
-[![npm version](https://img.shields.io/npm/v/@vikranth/vtop-mcp.svg)](https://www.npmjs.com/package/@vikranth/vtop-mcp)
+[![npm version](https://img.shields.io/npm/v/@vikranth2005/vtop-mcp.svg)](https://www.npmjs.com/package/@vikranth2005/vtop-mcp)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Built by reverse-engineering the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) app's communication with VTOP. Talks to the live portal with cookies + CSRF + authorizedID, exactly like a browser would.
@@ -20,7 +20,7 @@ Add this block to `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claud
   "mcpServers": {
     "vtop": {
       "command": "npx",
-      "args": ["-y", "@vikranth/vtop-mcp"],
+      "args": ["-y", "@vikranth2005/vtop-mcp"],
       "env": {
         "NODE_OPTIONS": "--use-system-ca",
         "VTOP_USERNAME": "your-vtop-username",
@@ -43,7 +43,7 @@ The model will auto-fetch a captcha, OCR it, log in with your stored credentials
 
 **Claude Code:**
 ```bash
-claude mcp add vtop -- npx -y @vikranth/vtop-mcp
+claude mcp add vtop -- npx -y @vikranth2005/vtop-mcp
 ```
 
 **Cursor / Windsurf / Cline / Zed** — same JSON shape as Claude Desktop, dropped into the client's MCP config file.
