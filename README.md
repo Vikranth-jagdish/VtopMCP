@@ -22,6 +22,25 @@ Add this block to `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claud
       "command": "npx",
       "args": ["-y", "@vikranth2005/vtop-mcp"],
       "env": {
+        "NODE_OPTIONS": "--use-system-ca"
+      }
+    }
+  }
+}
+```
+
+That's the minimal config. **`VTOP_USERNAME` and `VTOP_PASSWORD` are optional.** Two ways to use it:
+
+- **Don't set them (above):** the first time you ask something VTOP-related, the assistant will ask you for your VTOP username and password in the chat, then log in. Nothing is stored on disk.
+- **Set them (below):** fully hands-free — you're never asked, the assistant logs in silently with the stored values.
+
+```json
+{
+  "mcpServers": {
+    "vtop": {
+      "command": "npx",
+      "args": ["-y", "@vikranth2005/vtop-mcp"],
+      "env": {
         "NODE_OPTIONS": "--use-system-ca",
         "VTOP_USERNAME": "your-vtop-username",
         "VTOP_PASSWORD": "your-vtop-password"
@@ -35,7 +54,7 @@ Fully quit Claude Desktop (tray → Quit) and reopen. Then in a new chat, just s
 
 > *"What's my attendance?"*
 
-The model will auto-fetch a captcha, OCR it, log in with your stored credentials, pick the current semester, and answer — without asking you anything.
+The assistant fetches a captcha, OCRs it, logs in (asking for credentials only if they aren't in the config), picks the current semester, and answers.
 
 ---
 
@@ -75,8 +94,8 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `VTOP_USERNAME` | Recommended | — | Auto-login username. If unset, the model will ask for it the first time. |
-| `VTOP_PASSWORD` | Recommended | — | Auto-login password. If unset, the model will ask. |
+| `VTOP_USERNAME` | Optional | — | Auto-login username. **If unset, the assistant asks you for it in the chat the first time** you request VTOP data. |
+| `VTOP_PASSWORD` | Optional | — | Auto-login password. **If unset, the assistant asks you for it in the chat.** Never stored on disk when entered this way. |
 | `NODE_OPTIONS` | Recommended on Windows | — | Set to `--use-system-ca` so Node trusts VIT's TLS chain via the OS store. Without this you'll see `unable to verify the first certificate`. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
 
