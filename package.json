@@ -1,11 +1,11 @@
 {
   "name": "@vikranth2005/vtop-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, ...).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "vtop-mcp": "dist/index.js"
+    "vtop-mcp-server": "dist/index.js"
   },
   "exports": {
     ".": "./dist/index.js"
@@ -13,6 +13,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
