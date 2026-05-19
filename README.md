@@ -120,6 +120,25 @@ The MCP server is a local stdio process; there's no listening port, no remote en
 
 ## Troubleshooting
 
+**`'vtop-mcp' is not recognized` / npx fails on Windows** — some Windows npm setups don't resolve `npx`-of-a-scoped-package cleanly. Most reliable fix: install it globally and point the config at the command directly:
+
+```powershell
+npm i -g @vikranth2005/vtop-mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "vtop": {
+      "command": "vtop-mcp",
+      "env": { "NODE_OPTIONS": "--use-system-ca" }
+    }
+  }
+}
+```
+
+(`npm i -g` installs a `vtop-mcp` command shim on your PATH; Claude Desktop runs it directly, no npx involved.) macOS/Linux/WSL users can use the `npx -y @vikranth2005/vtop-mcp` form from Quick start without issue.
+
 **`unable to verify the first certificate`** — set `NODE_OPTIONS: "--use-system-ca"` in the `env` block. Node ≥ 22 needs the explicit flag to trust the OS CA store on Windows.
 
 **"It seems there are no attendance records"** — almost always a stale spawned MCP process. Quit Claude Desktop fully (tray → Quit, not just the X), then reopen.

@@ -14,7 +14,7 @@
  */
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 
-const PKG = "@vikranth2005/vtop-mcp";
+const PKG = process.env.TEST_PKG ?? "@vikranth2005/vtop-mcp";
 const REGISTRY = "https://registry.npmjs.org";
 
 const EXPECTED_TOOLS = [
@@ -46,11 +46,16 @@ class McpStdioClient {
   private buf = "";
 
   constructor() {
-    const cmd = `npx -y --registry=${REGISTRY} ${PKG}`;
+    const isLocal = PKG.endsWith(".tgz") || PKG.includes("/") || PKG.includes("\\");
+    const regFlag = isLocal ? "" : `--registry=${REGISTRY} `;
+    const cmd = `npx -y ${regFlag}${PKG}`;
+    const posixArgs = isLocal
+      ? ["-y", PKG]
+      : ["-y", `--registry=${REGISTRY}`, PKG];
     this.proc = (
       process.platform === "win32"
         ? spawn("cmd", ["/c", cmd], { stdio: ["pipe", "pipe", "pipe"], env: process.env })
-        : spawn("npx", ["-y", `--registry=${REGISTRY}`, PKG], {
+        : spawn("npx", posixArgs, {
             stdio: ["pipe", "pipe", "pipe"],
             env: process.env,
           })

@@ -5,6 +5,19 @@ This project follows [Semantic Versioning](https://semver.org/). While on
 `0.x`, minor/patch bumps may include parser-breaking changes whenever VIT
 alters VTOP's HTML.
 
+## [0.1.4] - 2026-05-19
+
+### Fixed
+- Reverted the bin name back to `vtop-mcp` (matching the scope-stripped
+  package name). `npx @vikranth2005/vtop-mcp` infers the command from the
+  package basename; when the only bin had a different name
+  (`vtop-mcp-server`), npx's Windows command-resolution fell into a flaky
+  path and failed with "'vtop-mcp-server' is not recognized". With the bin
+  named `vtop-mcp` (== basename) npx resolves it directly. The 0.1.2 rename
+  was chasing the wrong cause — the real 0.1.0/0.1.1 bug was the bin file
+  mode (fixed in 0.1.3 via Linux CI publish). 0.1.4 keeps the 0755 fix and
+  restores the correct bin name.
+
 ## [0.1.3] - 2026-05-18
 
 ### Fixed
