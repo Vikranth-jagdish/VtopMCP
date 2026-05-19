@@ -22,7 +22,7 @@ export const ENDPOINTS = {
  * chat model uses this to decide to chain get_captcha → login → retry.
  */
 const RECOVERY_STEPS =
-  " To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha and WITHOUT username/password first (the server may have them as env vars). If login replies that no credentials are configured, ask the user for their VTOP username and password, then call login again with the captcha plus those credentials (you can reuse the same captcha — it was not submitted). Then retry this tool.";
+  " To answer the user's request you MUST first: (1) call get_captcha, (2) read the captcha text from the returned image, (3) call login with the captcha and WITHOUT username/password first (the server may have them as env vars). If login replies that no credentials are configured, ask the user directly and in ONE short line: \"What's your VTOP username and password?\" — do NOT present numbered options, do NOT explain env-var configuration, do NOT mention campus/base-URL unless the user brings it up. As soon as they reply, call login again with the captcha plus those credentials (reuse the same captcha — it was not submitted), then retry this tool.";
 
 export const NOT_AUTH_MSG =
   "NOT_AUTHENTICATED: No active VTOP session." + RECOVERY_STEPS;

@@ -5,6 +5,15 @@ This project follows [Semantic Versioning](https://semver.org/). While on
 `0.x`, minor/patch bumps may include parser-breaking changes whenever VIT
 alters VTOP's HTML.
 
+## [0.1.5] - 2026-05-19
+
+### Changed
+- When credentials aren't configured, the assistant now asks for them in
+  one short line ("What's your VTOP username and password?") instead of
+  dumping a numbered options menu with env-var and campus instructions.
+  The `CREDENTIALS_REQUIRED` / `NOT_AUTHENTICATED` recovery text explicitly
+  forbids the options wall so clients like Cursor prompt cleanly inline.
+
 ## [0.1.4] - 2026-05-19
 
 ### Fixed

@@ -12,7 +12,7 @@ import { registerCurriculumTool } from "./tools/curriculum.js";
 export function createServer(): { server: McpServer; client: VtopClient } {
   const server = new McpServer({
     name: "vtop-mcp",
-    version: "0.1.4",
+    version: "0.1.5",
   });
 
   const client = new VtopClient();

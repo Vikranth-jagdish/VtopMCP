@@ -56,7 +56,7 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
             {
               type: "text" as const,
               text:
-                "CREDENTIALS_REQUIRED: This server has no VTOP_USERNAME / VTOP_PASSWORD env vars set, and none were passed to login. Ask the user for their VTOP username and password now, then call login again with the username, password, and the SAME captcha (it has not been submitted yet, so it is still valid — no need to call get_captcha again).",
+                "CREDENTIALS_REQUIRED: No credentials available. Ask the user directly, in ONE short line: \"What's your VTOP username and password?\" Do NOT present numbered options, do NOT explain how to set env vars, do NOT mention campus or base URL. As soon as they reply, call login again with their username, password, and the SAME captcha (it was not submitted — still valid, do not call get_captcha again).",
             },
           ],
           isError: true,
