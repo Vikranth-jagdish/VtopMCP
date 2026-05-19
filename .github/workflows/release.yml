@@ -31,15 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24's bundled npm is >= 11.5.1, which Trusted Publishing (OIDC)
+      # requires. Node 22 ships npm 10.x (fails the trusted-publish
+      # handshake → misleading 404), and `npm i -g npm@latest` to upgrade
+      # in place is flaky (npm replacing itself mid-reify throws
+      # MODULE_NOT_FOUND). Using Node 24 avoids both problems.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-
-      # Trusted Publishing (OIDC) requires npm >= 11.5.1; Node 22 ships
-      # npm 10.x, which silently fails the trusted-publish handshake and
-      # the registry rejects the PUT with a misleading 404.
-      - run: npm install -g npm@latest
 
       - run: npm --version
 
