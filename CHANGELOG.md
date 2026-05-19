@@ -14,6 +14,11 @@ alters VTOP's HTML.
   The `CREDENTIALS_REQUIRED` / `NOT_AUTHENTICATED` recovery text explicitly
   forbids the options wall so clients like Cursor prompt cleanly inline.
 
+### Docs
+- Made it explicit everywhere (README, package description, keywords) that
+  only **VIT Chennai** (`vtopcc.vit.ac.in`) is tested. Other campuses are
+  marked unverified rather than implied as supported.
+
 ## [0.1.4] - 2026-05-19
 
 ### Fixed

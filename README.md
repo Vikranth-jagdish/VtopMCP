@@ -1,9 +1,11 @@
 # @vikranth2005/vtop-mcp
 
-> MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, …).
+> MCP server for **VIT Chennai's** VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, …).
 
 [![npm version](https://img.shields.io/npm/v/@vikranth2005/vtop-mcp.svg)](https://www.npmjs.com/package/@vikranth2005/vtop-mcp)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> ⚠️ **Tested on VIT Chennai (`vtopcc.vit.ac.in`) only.** Other VIT campuses (Vellore, AP, Bhopal) use different VTOP deployments whose HTML/endpoints may differ — they are **unverified** and the parsers may not work there. Pointing `VTOP_BASE_URL` at another campus is experimental and unsupported until tested. Reports/PRs from other campuses welcome.
 
 Built by reverse-engineering the [android-vtop-chennai](https://github.com/therealsujitk/android-vtop-chennai) app's communication with VTOP. Talks to the live portal with cookies + CSRF + authorizedID, exactly like a browser would.
 
@@ -99,14 +101,16 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `NODE_OPTIONS` | Recommended on Windows | — | Set to `--use-system-ca` so Node trusts VIT's TLS chain via the OS store. Without this you'll see `unable to verify the first certificate`. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
 
-### Supported campuses
+### Campuses
 
-| Campus | `VTOP_BASE_URL` |
-|---|---|
-| VIT Chennai (default) | `https://vtopcc.vit.ac.in/vtop` |
-| VIT Vellore | `https://vtop.vit.ac.in/vtop` |
-| VIT-AP | `https://vtop.vitap.ac.in/vtop` |
-| VIT Bhopal | `https://vtop.vitbhopal.ac.in/vtop` |
+| Campus | `VTOP_BASE_URL` | Status |
+|---|---|---|
+| VIT Chennai (default) | `https://vtopcc.vit.ac.in/vtop` | ✅ Tested & working |
+| VIT Vellore | `https://vtop.vit.ac.in/vtop` | ⚠️ Untested |
+| VIT-AP | `https://vtop.vitap.ac.in/vtop` | ⚠️ Untested |
+| VIT Bhopal | `https://vtop.vitbhopal.ac.in/vtop` | ⚠️ Untested |
+
+Only VIT Chennai has been verified end-to-end. The other base URLs are provided for experimentation but the HTML parsers were written against VIT Chennai's VTOP and are likely to need adjustment for other campuses.
 
 ---
 

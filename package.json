@@ -1,7 +1,7 @@
 {
   "name": "@vikranth2005/vtop-mcp",
   "version": "0.1.5",
-  "description": "MCP server for VIT's VTOP student portal — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, ...).",
+  "description": "MCP server for VIT Chennai's VTOP student portal (tested on vtopcc.vit.ac.in only) — read attendance, marks, timetable, exam schedule, grades, and curriculum progress from any MCP client (Claude Desktop, Claude Code, Cursor, ...).",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -35,9 +35,7 @@
     "vtop",
     "vit",
     "vit-chennai",
-    "vit-vellore",
-    "vit-ap",
-    "vit-bhopal",
+    "vtopcc",
     "attendance",
     "timetable",
     "cgpa"
