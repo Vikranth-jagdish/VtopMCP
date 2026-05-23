@@ -14,6 +14,12 @@ export const ENDPOINTS = {
   semesterGrades: "examinations/examGradeView/doStudentGradeView",
   profile: "studentsRecord/StudentProfileAllView",
   timetableForSemesters: "academics/common/StudentTimeTableChn",
+  // Academic calendar is a 3-step flow: load the page for context, fetch the
+  // month buttons, then fetch each month's day table. The latter two are
+  // root-level actions (the page's relative AJAX resolves against /vtop/).
+  calendarPreview: "academics/common/CalendarPreview",
+  calendarMonthList: "getListForSemester",
+  calendarMonth: "processViewCalendar",
 } as const;
 
 /**

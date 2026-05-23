@@ -9,6 +9,8 @@ import { registerExamScheduleTool } from "./tools/exam-schedule.js";
 import { registerGradesTool } from "./tools/grades.js";
 import { registerProfileTool } from "./tools/profile.js";
 import { registerCurriculumTool } from "./tools/curriculum.js";
+import { registerAttendanceCalcTool } from "./tools/attendance-calc.js";
+import { registerTodayClassesTool } from "./tools/today.js";
 
 export function createServer(
   credentials?: Credentials,
@@ -38,6 +40,8 @@ export function createServer(
   registerGradesTool(server, client);
   registerProfileTool(server, client);
   registerCurriculumTool(server, client);
+  registerAttendanceCalcTool(server, client);
+  registerTodayClassesTool(server, client);
 
   return { server, client };
 }

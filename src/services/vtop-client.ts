@@ -10,6 +10,12 @@ import {
   SESSION_EXPIRED_MSG,
 } from "./constants.js";
 import { applySystemCATrust } from "./tls.js";
+import {
+  parseCalendarMonths,
+  parseAcademicCalendar,
+  calDateMonthKey,
+} from "./vtop-parser.js";
+import type { CalendarDay } from "./attendance-calc.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
 
@@ -87,6 +93,9 @@ export class VtopClient {
   private authorizedID: string | null = null;
   private cachedActiveSemesterId: string | null = null;
   private cachedGradeHistoryHtml: string | null = null;
+  private cachedCalendarSem: string | null = null;
+  private cachedCalendarMonths: string[] | null = null;
+  private cachedCalendarDays: Record<string, CalendarDay[]> = {};
 
   constructor(baseUrl?: string) {
     applySystemCATrust();
@@ -329,6 +338,9 @@ export class VtopClient {
     this.csrfToken = null;
     this.cachedActiveSemesterId = null;
     this.cachedGradeHistoryHtml = null;
+    this.cachedCalendarSem = null;
+    this.cachedCalendarMonths = null;
+    this.cachedCalendarDays = {};
   }
 
   /**
@@ -402,6 +414,57 @@ export class VtopClient {
     });
     this.cachedGradeHistoryHtml = html;
     return html;
+  }
+
+  /**
+   * Fetch the academic calendar (instructional days, holidays, day-order
+   * overrides) for the months overlapping [fromISO, toISO]. Three-step VTOP
+   * flow: load the calendar page for context, fetch the month buttons, then
+   * fetch each needed month's day table. Month list + parsed months are cached
+   * per semester for the session.
+   */
+  async getCalendar(
+    semesterId: string,
+    fromISO: string,
+    toISO: string,
+  ): Promise<CalendarDay[]> {
+    this.ensureAuthenticated();
+    const x = () => new Date().toUTCString();
+
+    if (this.cachedCalendarSem !== semesterId || !this.cachedCalendarMonths) {
+      // Loading the page first establishes the calendar context; the month-list
+      // and month actions 404 otherwise (same nav-state quirk as login).
+      await this.postWithAuth(ENDPOINTS.calendarPreview, {});
+      const listHtml = await this.postWithAuth(ENDPOINTS.calendarMonthList, {
+        paramReturnId: "getListForSemester",
+        semSubId: semesterId,
+        classGroupId: "COMB",
+        x: x(),
+      });
+      this.cachedCalendarMonths = parseCalendarMonths(listHtml);
+      this.cachedCalendarSem = semesterId;
+      this.cachedCalendarDays = {};
+    }
+
+    const fromYM = fromISO.slice(0, 7);
+    const toYM = toISO.slice(0, 7);
+    const out: CalendarDay[] = [];
+    for (const cd of this.cachedCalendarMonths) {
+      const ym = calDateMonthKey(cd);
+      if (!ym || ym < fromYM || ym > toYM) continue;
+      if (!this.cachedCalendarDays[cd]) {
+        const html = await this.postWithAuth(ENDPOINTS.calendarMonth, {
+          calDate: cd,
+          semSubId: semesterId,
+          classGroupId: "COMB",
+          x: x(),
+        });
+        this.cachedCalendarDays[cd] = parseAcademicCalendar(html, cd);
+      }
+      out.push(...this.cachedCalendarDays[cd]);
+    }
+    out.sort((a, b) => a.date.localeCompare(b.date));
+    return out;
   }
 
   async fetchPage(
