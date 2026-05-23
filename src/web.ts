@@ -10,7 +10,10 @@
 const BRAND = "VTOP Connector";
 const REPO_URL = "https://github.com/Vikranth-jagdish/VtopMCP";
 const AUTHOR_URL = "https://www.vikranth.space/labs/vtop-mcp";
+const AUTHOR_URL_TEXT = "vikranth.space/labs/vtop-mcp";
 const AUTHOR_NAME = "Vikranth";
+const NPM_PKG = "@vikranth2005/vtop-mcp";
+const NPM_URL = "https://www.npmjs.com/package/@vikranth2005/vtop-mcp";
 
 export function escapeHtml(s: string): string {
   return s
@@ -131,6 +134,9 @@ ol.steps em{font-style:italic}
 .safelist span{color:var(--soft);font-size:15px}
 .safelist span b{color:var(--ink)}
 .note{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:13.5px;line-height:1.6}
+
+.textlink{color:var(--ink);border-bottom:1px solid var(--accent);padding-bottom:1px;white-space:nowrap}
+.textlink:hover{color:var(--accent)}
 
 /* code / result */
 .codebox{position:relative;margin-top:10px}
@@ -286,7 +292,22 @@ function safety(): string {
     ${li("Only your link works.", "The link is yours alone, and it can be invalidated anytime by rotating the server's secret.")}
     ${li("Fully open source.", "Every line is public — read exactly what runs before you trust it.")}
   </ul>
-  <p class="note">Honest note — like any tool that signs in <em>for</em> you, whoever runs the server holds the key that can decrypt links. Only register on a deployment you trust (ideally your own).</p>
+</section>`;
+}
+
+function buildYourOwn(): string {
+  return `<section id="build">
+  <div class="kicker"><h2 class="serif">Use it in your own project</h2><span class="line"></span></div>
+  <p style="color:var(--soft);max-width:46em">VtopMCP is free and open source. Download the npm package and wire it into your own personal project, or read the full write-up on Vikranth's site.</p>
+  <div class="codebox" style="margin-top:14px">
+    <pre>npm install ${NPM_PKG}</pre>
+    <button class="copy" data-copy="npm install ${NPM_PKG}">${copyIcon}<span>Copy</span></button>
+  </div>
+  <p style="margin-top:16px;font-size:15px;color:var(--soft)">
+    <a class="textlink" href="${NPM_URL}" target="_blank" rel="noopener">npmjs.com/package/${NPM_PKG}</a>
+    &nbsp;·&nbsp;
+    <a class="textlink" href="${AUTHOR_URL}" target="_blank" rel="noopener">${AUTHOR_URL_TEXT}</a>
+  </p>
 </section>`;
 }
 
@@ -313,7 +334,8 @@ export function landingPage(origin: string, canonicalPath: string): string {
   </div>
 </section>
 ${howItWorks()}
-${safety()}`;
+${safety()}
+${buildYourOwn()}`;
   return layout({
     title: `${BRAND} — Connect VIT VTOP to ChatGPT`,
     description:
