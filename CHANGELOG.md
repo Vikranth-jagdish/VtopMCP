@@ -17,6 +17,19 @@ alters VTOP's HTML.
   one-click deployment to a public HTTPS URL.
 - `npm run start:http` script and `express` dependency for the HTTP server.
 
+### Fixed
+- **TLS "unable to verify the first certificate" against VTOP.** Node ignores
+  the operating-system trust store, so deployments behind a TLS-inspecting
+  proxy (common on campus networks, and the remote ChatGPT-connector host)
+  failed to verify VTOP's certificate chain. The server now merges the OS trust
+  store into Node's default CA list at startup (`src/services/tls.ts`, invoked
+  from the `VtopClient` constructor so both the stdio and HTTP entrypoints are
+  covered). Requires Node >= 22.15 for the runtime CA APIs; on older runtimes
+  it is a no-op and trust falls back to `NODE_EXTRA_CA_CERTS`.
+- Added an opt-in `VTOP_INSECURE_TLS=1` escape hatch for hosts whose proxy CA
+  isn't installed in the OS trust store. It disables certificate verification
+  process-wide, so it should only be used on a trusted network.
+
 ## [0.1.5] - 2026-05-19
 
 ### Changed

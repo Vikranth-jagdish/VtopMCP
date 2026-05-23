@@ -134,8 +134,8 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 |---|---|---|---|
 | `VTOP_USERNAME` | Optional | — | Auto-login username. **If unset, the assistant asks you for it in the chat the first time** you request VTOP data. |
 | `VTOP_PASSWORD` | Optional | — | Auto-login password. **If unset, the assistant asks you for it in the chat.** Never stored on disk when entered this way. |
-| `NODE_OPTIONS` | Recommended on Windows | — | Set to `--use-system-ca` so Node trusts VIT's TLS chain via the OS store. Without this you'll see `unable to verify the first certificate`. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
+| `VTOP_INSECURE_TLS` | Optional | — | Set to `1` only if you still hit `unable to verify the first certificate` (a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide — use only on a trusted network.** |
 
 ### Campuses
 
@@ -181,7 +181,7 @@ npm i -g @vikranth2005/vtop-mcp
 
 (`npm i -g` installs a `vtop-mcp` command shim on your PATH; Claude Desktop runs it directly, no npx involved.) macOS/Linux/WSL users can use the `npx -y @vikranth2005/vtop-mcp` form from Quick start without issue.
 
-**`unable to verify the first certificate`** — set `NODE_OPTIONS: "--use-system-ca"` in the `env` block. Node ≥ 22 needs the explicit flag to trust the OS CA store on Windows.
+**`unable to verify the first certificate`** — the server now merges your OS trust store into Node's CA list automatically at startup (Node ≥ 22.15), so this should resolve on its own; on older Node you can still set `NODE_OPTIONS: "--use-system-ca"` (Node ≥ 22) in the `env` block. If you're behind a TLS-inspecting proxy whose CA isn't installed in your OS trust store, set `VTOP_INSECURE_TLS: "1"` as a last resort (disables verification — trusted networks only).
 
 **"It seems there are no attendance records"** — almost always a stale spawned MCP process. Quit Claude Desktop fully (tray → Quit, not just the X), then reopen.
 
