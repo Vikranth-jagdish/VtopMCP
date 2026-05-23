@@ -77,6 +77,8 @@ header.bar{display:flex;align-items:center;justify-content:space-between;padding
 .bar nav a:hover{color:var(--ink)}
 .bar nav a::after{content:"";position:absolute;left:0;right:100%;bottom:0;height:1px;background:var(--ink);transition:right .25s ease}
 .bar nav a:hover::after{right:0}
+.bar nav a.madeby{color:var(--ink)}
+.bar nav a.madeby strong{color:var(--accent);font-weight:600}
 
 /* hero */
 .hero{padding:64px 0 8px}
@@ -180,7 +182,7 @@ footer.foot .links{display:flex;gap:20px;align-items:center}
 footer.foot .by b{color:var(--ink);font-weight:600}
 
 @media(max-width:560px){
-  .bar nav a:not(.gh){display:none}
+  .bar nav a:not(.madeby){display:none}
   ol.steps .num{font-size:1.6rem}
 }
 `;
@@ -246,6 +248,7 @@ function layout(o: LayoutOpts): string {
     <a href="#how">How it works</a>
     <a href="#safe">Safety</a>
     <a class="gh" href="${REPO_URL}" target="_blank" rel="noopener">GitHub&nbsp;↗</a>
+    <a class="madeby" href="${AUTHOR_URL}" target="_blank" rel="noopener">made by <strong>vikranth.space</strong>&nbsp;↗</a>
   </nav>
 </header>
 ${o.body}
