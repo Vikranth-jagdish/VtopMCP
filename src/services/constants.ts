@@ -20,7 +20,11 @@ export const ENDPOINTS = {
   calendarPreview: "academics/common/CalendarPreview",
   calendarMonthList: "getListForSemester",
   calendarMonth: "processViewCalendar",
+  attendanceDetail: "processViewAttendanceDetail",
 } as const;
+
+/** VIT caps On-Duty (OD) at 40 hours per semester. */
+export const OD_LIMIT_HOURS = 40;
 
 /**
  * Error string returned (or thrown) when an authenticated tool is hit

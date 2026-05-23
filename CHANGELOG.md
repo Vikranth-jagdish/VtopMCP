@@ -8,10 +8,18 @@ alters VTOP's HTML.
 ## [Unreleased]
 
 ### Added
+- **`calculate_gpa` tool — GPA / CGPA calculator** (VIT 10-point scale). Reports
+  current CGPA + each completed semester's GPA (computed from grades), computes
+  the GPA of a provided set of grades, projects your CGPA, and works out the GPA
+  needed to reach a target CGPA.
+- **`calculate_od` tool — On-Duty hours calculator.** Totals OD hours per course
+  and for the semester from the per-class attendance detail, against VIT's
+  40-hour limit (reports total, per-course, and hours remaining).
 - **`calculate_attendance` tool — attendance / bunk calculator.** Per course:
   current %, whether you're safe, how many classes you can still skip
-  (`bunkBuffer`) or must attend to recover (`classesToRecover`). Safe threshold
-  defaults to 74% (VIT needs 75%, but 74.x rounds up). With an `untilDate`
+  (`bunkBuffer`) or must attend to recover (`classesToRecover`). You're allowed
+  only when attendance is STRICTLY above 74.0% (74.0 = debarred, 74.001 = safe);
+  overridable via `targetPercent`. With an `untilDate`
   (e.g. a CAT attendance-closing date) it projects every real class from today
   to that date using the timetable grid + academic calendar (holidays, working
   Saturdays / day-orders) and reports how many upcoming classes you can miss or
@@ -27,7 +35,7 @@ alters VTOP's HTML.
   where VTOP's risk score tends to serve the unreadable Google reCAPTCHA instead
   of the OCR-able image captcha — a residential/mobile proxy lowers the score.
 - **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
-  serves the same 14 tools over the MCP **Streamable HTTP** transport so the
+  serves the same 16 tools over the MCP **Streamable HTTP** transport so the
   server can be deployed remotely and added as a custom ChatGPT connector.
   Each MCP session gets its own server instance and `VtopClient` (isolated
   cookie jar), so concurrent remote users never share login state.

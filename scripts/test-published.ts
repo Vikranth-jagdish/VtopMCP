@@ -6,7 +6,7 @@
  * registry, exactly like a user's Claude Desktop would) and speaks MCP
  * JSON-RPC over stdio to verify:
  *   1. initialize handshake → serverInfo.name + version
- *   2. tools/list → 14 expected tools, all with input schemas
+ *   2. tools/list → 16 expected tools, all with input schemas
  *   3. (network-permitting) tools/call get_captcha → image content
  *
  * Steps 1–2 prove the published artifact runs and exposes the right
@@ -32,6 +32,8 @@ const EXPECTED_TOOLS = [
   "get_curriculum_progress",
   "calculate_attendance",
   "get_today_classes",
+  "calculate_gpa",
+  "calculate_od",
 ].sort();
 
 type JsonRpcResponse = {

@@ -4,7 +4,7 @@
  *   npm run test:parser
  */
 import assert from "node:assert/strict";
-import { parseMarks, parseTimetableGrid, weeklyScheduleFromGrid, parseAcademicCalendar } from "../src/services/vtop-parser.js";
+import { parseMarks, parseTimetableGrid, weeklyScheduleFromGrid, parseAcademicCalendar, parseAttendanceDetailRefs, parseAttendanceDetail } from "../src/services/vtop-parser.js";
 
 let passed = 0;
 const check = (name: string, fn: () => void) => { fn(); passed++; console.log(`  ok  ${name}`); };
@@ -86,6 +86,36 @@ check("parseAcademicCalendar reads instructional + day-order", () => {
   assert.equal(d13.dayOrderWeekday, "THU"); // working Saturday following Thursday
   const d7 = days.find((d) => d.date === "2025-12-07")!;
   assert.equal(d7.instructional, false);
+});
+
+// Attendance detail / OD: main page row carries processViewAttendanceDetail(classId, slot).
+const ATT_MAIN_HTML = `<table>
+<thead><tr><td>Sl.No</td><td>Course Code</td><td>Course Title</td><td>Slot</td><td>View</td></tr></thead>
+<tbody><tr><td>1</td><td>BTST101L</td><td>Test Course</td><td>A1+TA1</td>
+  <td><a onclick="javascript:processViewAttendanceDetail('CH123','A1+TA1');">View</a></td></tr></tbody>
+</table>`;
+
+check("parseAttendanceDetailRefs extracts classId/slot/course", () => {
+  const refs = parseAttendanceDetailRefs(ATT_MAIN_HTML);
+  assert.equal(refs.length, 1);
+  assert.deepEqual(refs[0], { courseCode: "BTST101L", courseName: "Test Course", classId: "CH123", slot: "A1+TA1" });
+});
+
+const ATT_DETAIL_HTML = `<table>
+<tr><td>Sl.No</td><td>Attendance Date</td><td>Attendance Slot</td><td>Day And Timing</td><td>Attendance Status</td></tr>
+<tr><td>1</td><td>01-Jan-2026</td><td>A1</td><td>MON,08:00-08:50</td><td>Present</td></tr>
+<tr><td>2</td><td>03-Jan-2026</td><td>A1</td><td>WED,08:00-08:50</td><td>On Duty</td></tr>
+<tr><td>3</td><td>05-Jan-2026</td><td>L1</td><td>FRI,14:00-15:40</td><td>On Duty</td></tr>
+<tr><td>4</td><td>07-Jan-2026</td><td>A1</td><td>MON,08:00-08:50</td><td>Absent</td></tr>
+</table>`;
+
+check("parseAttendanceDetail counts statuses + OD hours (lab=2)", () => {
+  const d = parseAttendanceDetail(ATT_DETAIL_HTML);
+  assert.equal(d.present, 1);
+  assert.equal(d.absent, 1);
+  assert.equal(d.onDuty, 2);
+  assert.equal(d.total, 4);
+  assert.equal(d.odHours, 3); // 08:00-08:50 -> 1h, 14:00-15:40 -> 2h
 });
 
 console.log(`\n${passed} checks passed.`);

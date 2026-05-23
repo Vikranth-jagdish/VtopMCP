@@ -366,6 +366,93 @@ export function weeklyScheduleFromGrid(sessions: GridSession[]): WeeklySchedule 
   return sched;
 }
 
+export interface AttendanceDetailRef {
+  courseCode: string;
+  courseName: string;
+  classId: string;
+  slot: string;
+}
+
+/**
+ * From the main attendance page, extract per-course handles for the per-class
+ * detail view. Each row's "View" control carries
+ * processViewAttendanceDetail('<classId>','<slot>').
+ */
+export function parseAttendanceDetailRefs(html: string): AttendanceDetailRef[] {
+  const $ = cheerio.load(html);
+  const tableEl = $("table")
+    .toArray()
+    .find((t) => $(t).find("[onclick*='processViewAttendanceDetail']").length > 0);
+  if (!tableEl) return [];
+  const table = $(tableEl);
+  // Use all rows (the table has a <thead> header + <tbody> data); the header is
+  // the first row and data rows are the ones carrying the detail onclick.
+  const allRows = table.find("tr").toArray();
+  const headers = $(allRows[0])
+    .find("td, th")
+    .map((_i, e) => $(e).text().replace(/\s+/g, " ").trim().toLowerCase())
+    .get();
+  const codeIdx = headers.findIndex((h) => h.includes("course") && h.includes("code"));
+  const nameIdx = headers.findIndex((h) => h.includes("course") && (h.includes("title") || h.includes("name")));
+
+  const refs: AttendanceDetailRef[] = [];
+  for (const r of allRows) {
+    const oc = $(r).find("[onclick*='processViewAttendanceDetail']").attr("onclick") ?? "";
+    const m = oc.match(/processViewAttendanceDetail\((?:&#39;|['"])([^'"&]+)(?:&#39;|['"])\s*,\s*(?:&#39;|['"])([^'"&]+)/);
+    if (!m) continue;
+    const cells = $(r).find("td").map((_j, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+    const cell = (idx: number) => (idx >= 0 && idx < cells.length ? cells[idx] : "");
+    refs.push({ courseCode: cell(codeIdx), courseName: cell(nameIdx), classId: m[1], slot: m[2] });
+  }
+  return refs;
+}
+
+export interface AttendanceDetailCounts {
+  present: number;
+  absent: number;
+  onDuty: number;
+  total: number;
+  /** OD time in class-hours (duration-based: a 2-period lab counts as 2). */
+  odHours: number;
+}
+
+function periodsFromTiming(timing: string): number {
+  const m = timing.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+  if (!m) return 1;
+  const dur = (+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2]);
+  return dur <= 0 ? 1 : Math.max(1, Math.round(dur / 50));
+}
+
+/** Parse a per-class attendance detail (processViewAttendanceDetail) and tally statuses. */
+export function parseAttendanceDetail(html: string): AttendanceDetailCounts {
+  const $ = cheerio.load(html);
+  const table = $("table").first();
+  const tbody = table.children("tbody");
+  const rows = tbody.length ? tbody.children("tr") : table.children("tr");
+
+  const headers = $(rows[0])
+    .find("td, th")
+    .map((_i, e) => $(e).text().replace(/\s+/g, " ").trim().toLowerCase())
+    .get();
+  const statusIdx = headers.findIndex((h) => h.includes("status"));
+  const timingIdx = headers.findIndex((h) => h.includes("timing") || (h.includes("day") && h.includes("time")));
+
+  const counts: AttendanceDetailCounts = { present: 0, absent: 0, onDuty: 0, total: 0, odHours: 0 };
+  rows.slice(1).each((_i, r) => {
+    const cells = $(r).find("td").map((_j, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+    if (cells.length === 0) return;
+    const status = (statusIdx >= 0 ? cells[statusIdx] : cells[cells.length - 1] ?? "").toLowerCase();
+    if (!status) return;
+    counts.total++;
+    if (/on\s*duty/.test(status)) {
+      counts.onDuty++;
+      counts.odHours += periodsFromTiming(timingIdx >= 0 ? cells[timingIdx] ?? "" : "");
+    } else if (/present/.test(status)) counts.present++;
+    else if (/absent/.test(status)) counts.absent++;
+  });
+  return counts;
+}
+
 const MONTH_NUM: Record<string, number> = {
   JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
   JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,

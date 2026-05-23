@@ -11,9 +11,9 @@
 import type { AttendanceRecord } from "../types/index.js";
 
 /**
- * VIT officially requires 75% attendance, but the portal rounds the displayed
- * value so a "74.x" reads/counts as 75. Per requirement we treat anything
- * >= 74.0% as safe. Callers can override (targetPercent) for a stricter target.
+ * You're allowed (not debarred) only when attendance is STRICTLY ABOVE this
+ * percentage: 74.0% exactly is debarred, 74.001% is allowed. So all comparisons
+ * use `>` (not `>=`). Callers can override via targetPercent.
  * This is a percentage in 0..100.
  */
 export const SAFE_THRESHOLD_PERCENT = 74.0;
@@ -59,13 +59,13 @@ export function isSafe(
   targetPercent: number = SAFE_THRESHOLD_PERCENT,
 ): boolean {
   if (total <= 0) return false;
-  return attended / total >= targetPercent / 100;
+  return attended / total > targetPercent / 100;
 }
 
 /**
- * Largest number of future classes you can skip and still finish at or above
- * the threshold. Each skip adds 1 to total and 0 to attended. Returns 0 if you
- * are already below the threshold.
+ * Largest number of future classes you can skip and stay STRICTLY above the
+ * threshold. Each skip adds 1 to total and 0 to attended. 0 if already debarred.
+ * Need attended/(total+s) > t  ->  s < attended/t - total.
  */
 export function bunkBuffer(
   attended: number,
@@ -75,12 +75,13 @@ export function bunkBuffer(
   const t = targetPercent / 100;
   if (t <= 0) return Number.MAX_SAFE_INTEGER;
   if (!isSafe(attended, total, targetPercent)) return 0;
-  return Math.max(0, Math.floor(attended / t) - total);
+  return Math.max(0, Math.ceil(attended / t - total - 1e-9) - 1);
 }
 
 /**
- * Smallest number of consecutive future classes you must attend to climb back
- * to the threshold. 0 if already safe; null if unreachable (target >= 100%).
+ * Smallest number of consecutive future classes you must attend to get STRICTLY
+ * above the threshold. 0 if already safe; null if unreachable (target >= 100%).
+ * Need (attended+x)/(total+x) > t  ->  x > (t*total - attended)/(1-t).
  */
 export function classesToRecover(
   attended: number,
@@ -90,8 +91,8 @@ export function classesToRecover(
   const t = targetPercent / 100;
   if (isSafe(attended, total, targetPercent)) return 0;
   if (t >= 1) return null;
-  const x = Math.ceil((t * total - attended) / (1 - t) - 1e-9);
-  return Math.max(0, x);
+  const x = Math.floor((t * total - attended) / (1 - t) + 1e-9) + 1;
+  return Math.max(1, x);
 }
 
 export interface AttendanceProjection {
@@ -235,8 +236,9 @@ export function projectDeadline(
   const finalTotal = total + u;
   const ifAttendAll = finalTotal > 0 ? (attended + u) / finalTotal : 0;
   const ifSkipAll = finalTotal > 0 ? attended / finalTotal : 0;
-  const maxSkippable = Math.max(0, Math.min(u, Math.floor(attended + u - t * finalTotal + 1e-9)));
-  const canBeSafe = ifAttendAll >= t;
+  // skip s, attend (u-s): (attended+u-s)/finalTotal > t  ->  s < attended+u - t*finalTotal
+  const maxSkippable = Math.max(0, Math.min(u, Math.ceil(attended + u - t * finalTotal - 1e-9) - 1));
+  const canBeSafe = ifAttendAll > t;
   return {
     untilDate,
     upcomingSessions: u,

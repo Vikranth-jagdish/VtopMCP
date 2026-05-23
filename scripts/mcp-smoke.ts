@@ -4,7 +4,7 @@
  *
  * Spawns dist/index.js and exchanges JSON-RPC messages over stdio to verify:
  *   1. initialize handshake succeeds and serverInfo.name === "vtop-mcp"
- *   2. tools/list returns exactly the 14 expected tools with proper schemas
+ *   2. tools/list returns exactly the 16 expected tools with proper schemas
  *   3. (network-permitting) tools/call get_captcha returns an image content item
  *
  * Steps 1 and 2 work without VIT network — useful as a CI sanity check.
@@ -31,6 +31,8 @@ const EXPECTED_TOOLS = [
   "get_curriculum_progress",
   "calculate_attendance",
   "get_today_classes",
+  "calculate_gpa",
+  "calculate_od",
 ].sort();
 
 const SERVER_PATH = path.resolve(process.cwd(), "dist", "index.js");

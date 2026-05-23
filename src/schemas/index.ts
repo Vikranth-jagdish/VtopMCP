@@ -56,6 +56,42 @@ export const CalcAttendanceSchema = z.object({
     .describe("Whether classes ON the closing date are counted. Default true."),
 });
 
+export const GpaCalcSchema = z.object({
+  courses: z
+    .array(
+      z.object({
+        credits: z.number().describe("Credit hours for the course."),
+        grade: z.string().describe("Letter grade: S, A, B, C, D, E, or F."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Explicit courses (credits + expected/actual grade) to compute a GPA from and project your CGPA — use for 'what-if' grade scenarios.",
+    ),
+  semesterId: z
+    .string()
+    .optional()
+    .describe("When `courses` is omitted, compute this semester's GPA from VTOP. Omit for current semester."),
+  currentCgpa: z.number().optional().describe("Override the base CGPA for projection (defaults to your real CGPA)."),
+  currentCredits: z.number().optional().describe("Override base completed credits for projection (defaults to real)."),
+  targetCgpa: z.number().optional().describe("If set, compute the GPA needed over `plannedCredits` to reach this CGPA."),
+  plannedCredits: z
+    .number()
+    .optional()
+    .describe("Upcoming-semester credits, used with `targetCgpa` (defaults to the credits in `courses`)."),
+});
+
+export const OdCalcSchema = z.object({
+  semesterId: z
+    .string()
+    .optional()
+    .describe("Semester ID. If omitted, uses the current semester."),
+  courseCode: z
+    .string()
+    .optional()
+    .describe("Limit to one course code (e.g. 'BCSE302L'). Omit to total OD across all courses."),
+});
+
 export const TodayClassesSchema = z.object({
   date: z
     .string()
