@@ -52,7 +52,7 @@ export function registerAttendanceCalcTool(server: McpServer, client: VtopClient
 
       // Date-aware projection: count real upcoming sessions per course.
       const from = istToday();
-      const gridHtml = await client.fetchPage(ENDPOINTS.timetable, { semesterSubId: id });
+      const gridHtml = await client.getTimetableHtml(id);
       const schedule = weeklyScheduleFromGrid(parseTimetableGrid(gridHtml));
       const calendar = await client.getCalendar(id, from, untilDate);
       const days = listUpcomingClassDays(schedule, calendar, from, untilDate, includeUntilDate ?? true);

@@ -16,6 +16,7 @@ import {
   calDateMonthKey,
 } from "./vtop-parser.js";
 import type { CalendarDay } from "./attendance-calc.js";
+import { pMap } from "./concurrency.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
 
@@ -96,6 +97,9 @@ export class VtopClient {
   private cachedCalendarSem: string | null = null;
   private cachedCalendarMonths: string[] | null = null;
   private cachedCalendarDays: Record<string, CalendarDay[]> = {};
+  // Timetable is static for a semester — cache it so getCurrentSemesterId,
+  // calculate_attendance and get_today_classes don't refetch it.
+  private cachedTimetableHtml = new Map<string, string>();
 
   constructor(baseUrl?: string) {
     applySystemCATrust();
@@ -341,6 +345,16 @@ export class VtopClient {
     this.cachedCalendarSem = null;
     this.cachedCalendarMonths = null;
     this.cachedCalendarDays = {};
+    this.cachedTimetableHtml.clear();
+  }
+
+  /** Timetable HTML for a semester, cached for the session (it doesn't change). */
+  async getTimetableHtml(semesterId: string): Promise<string> {
+    const cached = this.cachedTimetableHtml.get(semesterId);
+    if (cached) return cached;
+    const html = await this.fetchPage(ENDPOINTS.timetable, { semesterSubId: semesterId });
+    this.cachedTimetableHtml.set(semesterId, html);
+    return html;
   }
 
   /**
@@ -360,24 +374,30 @@ export class VtopClient {
       throw new Error("No semesters available on VTOP for this account.");
     }
 
-    for (const sem of semesters.slice(0, MAX_PROBE_SEMESTERS)) {
-      try {
-        const html = await this.postWithAuth(ENDPOINTS.timetable, {
-          semesterSubId: sem.id,
-        });
-        if (COURSE_CODE_PATTERN.test(html)) {
-          this.cachedActiveSemesterId = sem.id;
-          return sem.id;
-        }
-      } catch (err) {
-        // Probe failures usually mean session expiry — propagate so the
-        // caller can recover via re-login rather than silently picking the
-        // wrong semester.
-        if (err instanceof Error && err.message.startsWith("NOT_AUTHENTICATED")) {
-          throw err;
-        }
+    // Probe the recent semesters' timetables concurrently, then pick the first
+    // (in dropdown order) that has real course rows. Caches the winning
+    // timetable HTML so the data tools don't refetch it.
+    const candidates = semesters.slice(0, MAX_PROBE_SEMESTERS);
+    const probes = await Promise.allSettled(
+      candidates.map((sem) => this.postWithAuth(ENDPOINTS.timetable, { semesterSubId: sem.id })),
+    );
+    for (let i = 0; i < candidates.length; i++) {
+      const r = probes[i];
+      if (r.status === "fulfilled" && COURSE_CODE_PATTERN.test(r.value)) {
+        this.cachedActiveSemesterId = candidates[i].id;
+        this.cachedTimetableHtml.set(candidates[i].id, r.value);
+        return candidates[i].id;
       }
     }
+    // A session-expiry on any probe should surface so the caller can re-login,
+    // rather than silently falling back to the wrong semester.
+    const authFail = probes.find(
+      (r): r is PromiseRejectedResult =>
+        r.status === "rejected" &&
+        r.reason instanceof Error &&
+        r.reason.message.startsWith("NOT_AUTHENTICATED"),
+    );
+    if (authFail) throw authFail.reason;
 
     this.cachedActiveSemesterId = semesters[0].id;
     return semesters[0].id;
@@ -448,21 +468,24 @@ export class VtopClient {
 
     const fromYM = fromISO.slice(0, 7);
     const toYM = toISO.slice(0, 7);
-    const out: CalendarDay[] = [];
-    for (const cd of this.cachedCalendarMonths) {
+    const wanted = this.cachedCalendarMonths.filter((cd) => {
       const ym = calDateMonthKey(cd);
-      if (!ym || ym < fromYM || ym > toYM) continue;
-      if (!this.cachedCalendarDays[cd]) {
-        const html = await this.postWithAuth(ENDPOINTS.calendarMonth, {
-          calDate: cd,
-          semSubId: semesterId,
-          classGroupId: "COMB",
-          x: x(),
-        });
-        this.cachedCalendarDays[cd] = parseAcademicCalendar(html, cd);
-      }
-      out.push(...this.cachedCalendarDays[cd]);
-    }
+      return ym && ym >= fromYM && ym <= toYM;
+    });
+    // Fetch any uncached months in the range concurrently.
+    const missing = wanted.filter((cd) => !this.cachedCalendarDays[cd]);
+    await pMap(missing, async (cd) => {
+      const html = await this.postWithAuth(ENDPOINTS.calendarMonth, {
+        calDate: cd,
+        semSubId: semesterId,
+        classGroupId: "COMB",
+        x: x(),
+      });
+      this.cachedCalendarDays[cd] = parseAcademicCalendar(html, cd);
+    });
+
+    const out: CalendarDay[] = [];
+    for (const cd of wanted) out.push(...(this.cachedCalendarDays[cd] ?? []));
     out.sort((a, b) => a.date.localeCompare(b.date));
     return out;
   }

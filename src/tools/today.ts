@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VtopClient } from "../services/vtop-client.js";
 import { parseTimetable, parseTimetableGrid } from "../services/vtop-parser.js";
 import { weekdayOf } from "../services/attendance-calc.js";
-import { ENDPOINTS } from "../services/constants.js";
 import { TodayClassesSchema } from "../schemas/index.js";
 import { mkJsonTool } from "./_helpers.js";
 
@@ -20,7 +19,7 @@ export function registerTodayClassesTool(server: McpServer, client: VtopClient) 
       const target = date ?? istToday();
       const id = await client.getCurrentSemesterId();
 
-      const gridHtml = await client.fetchPage(ENDPOINTS.timetable, { semesterSubId: id });
+      const gridHtml = await client.getTimetableHtml(id);
       const sessions = parseTimetableGrid(gridHtml);
       const names = new Map(parseTimetable(gridHtml).map((c) => [c.courseCode, c.courseName]));
 

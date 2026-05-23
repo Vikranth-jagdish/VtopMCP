@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VtopClient } from "../services/vtop-client.js";
 import { parseAttendanceDetailRefs, parseAttendanceDetail } from "../services/vtop-parser.js";
+import { pMap } from "../services/concurrency.js";
 import { ENDPOINTS, OD_LIMIT_HOURS } from "../services/constants.js";
 import { OdCalcSchema } from "../schemas/index.js";
 import { mkJsonTool } from "./_helpers.js";
@@ -23,17 +24,8 @@ export function registerOdCalcTool(server: McpServer, client: VtopClient) {
         if (refs.length === 0) throw new Error(`No course "${courseCode}" found in this semester's attendance.`);
       }
 
-      const perCourse: {
-        courseCode: string;
-        courseName: string;
-        odHours: number;
-        odEntries: number;
-        present: number;
-        absent: number;
-        total: number;
-      }[] = [];
-
-      for (const ref of refs) {
+      // Fetch each course's per-class detail concurrently (the slow part).
+      const perCourse = await pMap(refs, async (ref) => {
         const html = await client.fetchPage(ENDPOINTS.attendanceDetail, {
           semesterSubId: id,
           classId: ref.classId,
@@ -41,7 +33,7 @@ export function registerOdCalcTool(server: McpServer, client: VtopClient) {
           x: new Date().toUTCString(),
         });
         const d = parseAttendanceDetail(html);
-        perCourse.push({
+        return {
           courseCode: ref.courseCode,
           courseName: ref.courseName,
           odHours: d.odHours,
@@ -49,8 +41,8 @@ export function registerOdCalcTool(server: McpServer, client: VtopClient) {
           present: d.present,
           absent: d.absent,
           total: d.total,
-        });
-      }
+        };
+      });
 
       const totalOdHours = perCourse.reduce((s, c) => s + c.odHours, 0);
       return {
