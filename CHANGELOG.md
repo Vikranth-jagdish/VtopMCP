@@ -12,14 +12,12 @@ alters VTOP's HTML.
   current CGPA, percentage (CGPA×10), and each completed semester's GPA (computed
   from grades), computes the GPA of a provided set of grades, projects your CGPA,
   and works out the GPA needed to reach a target CGPA.
-- **`predict_grades` tool — CGPA grade predictor.** Estimates this semester's
-  grade for each course from your current internal marks (projecting the
-  not-yet-conducted components, e.g. the FAT), then your SGPA and projected CGPA.
-  Mirrors VIT's actual method: ABSOLUTE grading for lab / soft-skill / project
-  courses, and RELATIVE grading for theory (S≥μ+1.5σ, A≥μ+0.5σ, B≥μ±0.5σ,
-  C≥μ−1.5σ, D≥μ−2.5σ; F below min(50, μ−2σ)). VTOP hides the class average, so
-  theory courses use a class average you supply (`classAverages`, with an
-  optional `sigma`); the tool asks for them when missing.
+- **`predict_grades` — CGPA grade predictor (implemented but currently INACTIVE,
+  not registered as a tool).** Estimates grades from current marks (absolute for
+  lab/soft-skill/project, relative for theory using a user-supplied class
+  average). Kept in the codebase (`src/tools/predict-grades.ts`) but disabled for
+  now because reliable theory prediction needs the class average VTOP hides;
+  re-enable by registering it in `src/server.ts`.
 - **`calculate_od` tool — On-Duty hours calculator.** Totals OD hours per course
   and for the semester from the per-class attendance detail, against VIT's
   40-hour limit (reports total, per-course, and hours remaining).
@@ -43,7 +41,7 @@ alters VTOP's HTML.
   where VTOP's risk score tends to serve the unreadable Google reCAPTCHA instead
   of the OCR-able image captcha — a residential/mobile proxy lowers the score.
 - **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
-  serves the same 17 tools over the MCP **Streamable HTTP** transport so the
+  serves the same 16 tools over the MCP **Streamable HTTP** transport so the
   server can be deployed remotely and added as a custom ChatGPT connector.
   Each MCP session gets its own server instance and `VtopClient` (isolated
   cookie jar), so concurrent remote users never share login state.

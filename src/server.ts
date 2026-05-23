@@ -13,7 +13,10 @@ import { registerAttendanceCalcTool } from "./tools/attendance-calc.js";
 import { registerTodayClassesTool } from "./tools/today.js";
 import { registerGpaCalcTool } from "./tools/gpa-calc.js";
 import { registerOdCalcTool } from "./tools/od-calc.js";
-import { registerPredictGradesTool } from "./tools/predict-grades.js";
+// predict_grades is implemented but kept INACTIVE for now: reliable grade
+// prediction for theory courses needs the class average, which VTOP hides, so
+// the estimate isn't trustworthy yet. Re-enable by uncommenting below.
+// import { registerPredictGradesTool } from "./tools/predict-grades.js";
 
 export function createServer(
   credentials?: Credentials,
@@ -47,7 +50,7 @@ export function createServer(
   registerTodayClassesTool(server, client);
   registerGpaCalcTool(server, client);
   registerOdCalcTool(server, client);
-  registerPredictGradesTool(server, client);
+  // registerPredictGradesTool(server, client); // inactive — see import note above
 
   return { server, client };
 }
