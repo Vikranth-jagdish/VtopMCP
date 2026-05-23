@@ -8,8 +8,44 @@ alters VTOP's HTML.
 ## [Unreleased]
 
 ### Added
+- **`calculate_gpa` tool — GPA / CGPA calculator** (VIT 10-point scale). Reports
+  current CGPA, percentage (CGPA×10), and each completed semester's GPA (computed
+  from grades), computes the GPA of a provided set of grades, projects your CGPA,
+  and works out the GPA needed to reach a target CGPA.
+- **`predict_grades` — CGPA grade predictor (implemented but currently INACTIVE,
+  not registered as a tool).** Estimates grades from current marks (absolute for
+  lab/soft-skill/project, relative for theory using a user-supplied class
+  average). Kept in the codebase (`src/tools/predict-grades.ts`) but disabled for
+  now because reliable theory prediction needs the class average VTOP hides;
+  re-enable by registering it in `src/server.ts`.
+- **`calculate_od` tool — On-Duty hours calculator.** Totals OD hours per course
+  and for the semester from the per-class attendance detail, against VIT's
+  40-hour limit (reports total, per-course, and hours remaining).
+- **`calculate_attendance` tool — attendance / bunk calculator.** Per course:
+  current %, whether you're safe, how many classes you can still skip
+  (`bunkBuffer`) or must attend to recover (`classesToRecover`). You're allowed
+  only when attendance is STRICTLY above 74.0% (74.0 = debarred, 74.001 = safe);
+  overridable via `targetPercent`. With an `untilDate`
+  (e.g. a CAT attendance-closing date) it projects every real class from today
+  to that date using the timetable grid + academic calendar (holidays, working
+  Saturdays / day-orders) and reports how many upcoming classes you can miss or
+  must attend to be safe by the deadline.
+- **`get_today_classes` tool.** Today's (or any date's) classes with time and
+  venue, calendar-aware — returns a holiday result on non-instructional days and
+  follows the correct day-order on working Saturdays.
+- **`get_calendar` tool — academic-calendar lookup.** Find holidays, events
+  (e.g. TechnoVIT), working Saturdays / day-orders, and instructional days.
+  Search a named event with `query`, list a `month`, or get `holidaysOnly`;
+  `parseAcademicCalendar` now also captures each day's event/holiday label.
+- **Academic calendar + timetable-grid parsing.** New `VtopClient.getCalendar`
+  (3-step `CalendarPreview` → `getListForSemester` → `processViewCalendar` flow,
+  cached per session) and `parseAcademicCalendar` / `parseTimetableGrid` parsers.
+- **Optional outbound proxy (`VTOP_PROXY_URL`).** Routes VTOP traffic through an
+  HTTP(S) proxy (falls back to `HTTPS_PROXY`). Useful on a datacenter/cloud host,
+  where VTOP's risk score tends to serve the unreadable Google reCAPTCHA instead
+  of the OCR-able image captcha — a residential/mobile proxy lowers the score.
 - **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
-  serves the same 12 tools over the MCP **Streamable HTTP** transport so the
+  serves the same 17 tools over the MCP **Streamable HTTP** transport so the
   server can be deployed remotely and added as a custom ChatGPT connector.
   Each MCP session gets its own server instance and `VtopClient` (isolated
   cookie jar), so concurrent remote users never share login state.
@@ -46,6 +82,14 @@ alters VTOP's HTML.
   crawlability.
 
 ### Fixed
+- **`get_marks` returned "not available" even when marks were published.**
+  `parseMarks` treated `#fixedTableContainer` (a `<div>`) as the marks table, so
+  it found no rows. It now selects the wrapped `table`, walks the course/marks
+  row pairs correctly, and populates course code/name (previously left blank).
+- **Multi-user login 404.** `POST /vtop/login` returned a Tomcat 404 because
+  ChatGPT's connector can open a fresh MCP session per tool call, so `login` ran
+  on a different, unarmed `VtopClient` than `get_captcha`. The HTTP layer now
+  shares one `VtopClient` per connector token across MCP sessions.
 - **TLS "unable to verify the first certificate" against VTOP.** Node ignores
   the operating-system trust store, so deployments behind a TLS-inspecting
   proxy (common on campus networks, and the remote ChatGPT-connector host)

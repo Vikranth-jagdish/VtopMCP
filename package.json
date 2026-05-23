@@ -27,6 +27,8 @@
     "start:http": "node dist/http.js",
     "test:e2e": "tsx scripts/e2e.ts",
     "test:mcp": "tsx scripts/mcp-smoke.ts",
+    "test:calc": "tsx scripts/calc-test.ts",
+    "test:parser": "tsx scripts/parser-test.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

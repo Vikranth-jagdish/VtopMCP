@@ -9,6 +9,15 @@ import { registerExamScheduleTool } from "./tools/exam-schedule.js";
 import { registerGradesTool } from "./tools/grades.js";
 import { registerProfileTool } from "./tools/profile.js";
 import { registerCurriculumTool } from "./tools/curriculum.js";
+import { registerAttendanceCalcTool } from "./tools/attendance-calc.js";
+import { registerTodayClassesTool } from "./tools/today.js";
+import { registerCalendarTool } from "./tools/calendar.js";
+import { registerGpaCalcTool } from "./tools/gpa-calc.js";
+import { registerOdCalcTool } from "./tools/od-calc.js";
+// predict_grades is implemented but kept INACTIVE for now: reliable grade
+// prediction for theory courses needs the class average, which VTOP hides, so
+// the estimate isn't trustworthy yet. Re-enable by uncommenting below.
+// import { registerPredictGradesTool } from "./tools/predict-grades.js";
 
 export function createServer(
   credentials?: Credentials,
@@ -38,6 +47,12 @@ export function createServer(
   registerGradesTool(server, client);
   registerProfileTool(server, client);
   registerCurriculumTool(server, client);
+  registerAttendanceCalcTool(server, client);
+  registerTodayClassesTool(server, client);
+  registerCalendarTool(server, client);
+  registerGpaCalcTool(server, client);
+  registerOdCalcTool(server, client);
+  // registerPredictGradesTool(server, client); // inactive — see import note above
 
   return { server, client };
 }

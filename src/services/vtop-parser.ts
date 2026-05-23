@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import type { Weekday, WeeklySchedule, CalendarDay } from "./attendance-calc.js";
 import type {
   AttendanceRecord,
   TimetableSlot,
@@ -269,6 +270,266 @@ export function parseTimetable(html: string): TimetableSlot[] {
   }));
 }
 
+export interface GridSession {
+  day: Weekday;
+  slot: string;
+  courseCode: string;
+  venue: string;
+  startTime: string;
+  endTime: string;
+  type: "THEORY" | "LAB";
+}
+
+const GRID_WEEKDAYS: Record<string, Weekday> = {
+  SUN: "SUN", MON: "MON", TUE: "TUE", WED: "WED", THU: "THU", FRI: "FRI", SAT: "SAT",
+};
+
+/**
+ * Parse the weekly day×time grid out of the processViewTimeTable HTML.
+ *
+ * The grid is paired rows per day: a THEORY row (first cell = weekday, second =
+ * "THEORY") followed by a LAB row (first cell = "LAB"). Period start/end times
+ * live in four header rows (THEORY Start/End, LAB Start/End). Occupied cells are
+ * "SLOT-COURSECODE" (e.g. "A1-BCSE302L"); empty/free slots are bare codes or "-".
+ * Each occupied cell is one weekly session of that course.
+ */
+export function parseTimetableGrid(html: string): GridSession[] {
+  const $ = cheerio.load(html);
+  // The grid is the table that has a row whose first cell is a weekday (the
+  // course-list table never does), so detect that rather than matching against
+  // concatenated cell text.
+  const gridEl = $("table").toArray().find((t) =>
+    $(t)
+      .find("tr")
+      .toArray()
+      .some((r) => GRID_WEEKDAYS[$(r).find("td, th").first().text().trim().toUpperCase()] !== undefined),
+  );
+  if (!gridEl) return [];
+  const grid = $(gridEl);
+  const tbodyRows = grid.find("> tbody > tr");
+  const rows = (tbodyRows.length ? tbodyRows : grid.find("tr")).toArray();
+  const rowCells = (r: (typeof rows)[number]) =>
+    $(r).find("td, th").map((_j, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+
+  let theoryStart: string[] = [], theoryEnd: string[] = [], labStart: string[] = [], labEnd: string[] = [];
+  const sessions: GridSession[] = [];
+  let currentDay: Weekday | null = null;
+
+  const addSlots = (
+    slotCells: string[], starts: string[], ends: string[],
+    type: "THEORY" | "LAB", day: Weekday,
+  ) => {
+    for (let i = 0; i < slotCells.length; i++) {
+      const cell = slotCells[i];
+      if (!cell || /^lunch$/i.test(cell) || cell === "-") continue;
+      // Occupied cell: "SLOT-COURSE-TYPE-VENUE-GROUP", e.g. "A1-BCSE302L-TH-AB3-205-ALL"
+      // (venue itself can contain a dash). Bare slots like "A2" have no course.
+      const parts = cell.split("-").map((s) => s.trim());
+      if (parts.length < 2) continue;
+      const slot = parts[0];
+      const courseCode = parts[1];
+      if (!/^[A-Z]{3,5}\d{3,4}[A-Z]?$/.test(courseCode)) continue;
+      const venue = parts.length >= 5 ? parts.slice(3, -1).join("-") : "";
+      sessions.push({ day, slot, courseCode, venue, startTime: starts[i] ?? "", endTime: ends[i] ?? "", type });
+    }
+  };
+
+  for (const r of rows) {
+    const cells = rowCells(r);
+    if (!cells.length) continue;
+    const c0 = (cells[0] ?? "").toUpperCase();
+    const c1 = (cells[1] ?? "").toUpperCase();
+
+    if (c0 === "THEORY" && c1 === "START") { theoryStart = cells.slice(2); continue; }
+    if (c0 === "LAB" && c1 === "START") { labStart = cells.slice(2); continue; }
+    if (c0 === "END") {
+      if (!theoryEnd.length) theoryEnd = cells.slice(1);
+      else labEnd = cells.slice(1);
+      continue;
+    }
+    if (GRID_WEEKDAYS[c0]) {
+      currentDay = GRID_WEEKDAYS[c0];
+      addSlots(cells.slice(2), theoryStart, theoryEnd, "THEORY", currentDay);
+      continue;
+    }
+    if (c0 === "LAB" && currentDay) {
+      addSlots(cells.slice(1), labStart, labEnd, "LAB", currentDay);
+    }
+  }
+  return sessions;
+}
+
+/** Group grid sessions into a per-weekday list of course codes (repeats = multiple sessions). */
+export function weeklyScheduleFromGrid(sessions: GridSession[]): WeeklySchedule {
+  const sched: WeeklySchedule = { SUN: [], MON: [], TUE: [], WED: [], THU: [], FRI: [], SAT: [] };
+  for (const s of sessions) sched[s.day].push(s.courseCode);
+  return sched;
+}
+
+export interface AttendanceDetailRef {
+  courseCode: string;
+  courseName: string;
+  classId: string;
+  slot: string;
+}
+
+/**
+ * From the main attendance page, extract per-course handles for the per-class
+ * detail view. Each row's "View" control carries
+ * processViewAttendanceDetail('<classId>','<slot>').
+ */
+export function parseAttendanceDetailRefs(html: string): AttendanceDetailRef[] {
+  const $ = cheerio.load(html);
+  const tableEl = $("table")
+    .toArray()
+    .find((t) => $(t).find("[onclick*='processViewAttendanceDetail']").length > 0);
+  if (!tableEl) return [];
+  const table = $(tableEl);
+  // Use all rows (the table has a <thead> header + <tbody> data); the header is
+  // the first row and data rows are the ones carrying the detail onclick.
+  const allRows = table.find("tr").toArray();
+  const headers = $(allRows[0])
+    .find("td, th")
+    .map((_i, e) => $(e).text().replace(/\s+/g, " ").trim().toLowerCase())
+    .get();
+  const codeIdx = headers.findIndex((h) => h.includes("course") && h.includes("code"));
+  const nameIdx = headers.findIndex((h) => h.includes("course") && (h.includes("title") || h.includes("name")));
+
+  const refs: AttendanceDetailRef[] = [];
+  for (const r of allRows) {
+    const oc = $(r).find("[onclick*='processViewAttendanceDetail']").attr("onclick") ?? "";
+    const m = oc.match(/processViewAttendanceDetail\((?:&#39;|['"])([^'"&]+)(?:&#39;|['"])\s*,\s*(?:&#39;|['"])([^'"&]+)/);
+    if (!m) continue;
+    const cells = $(r).find("td").map((_j, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+    const cell = (idx: number) => (idx >= 0 && idx < cells.length ? cells[idx] : "");
+    refs.push({ courseCode: cell(codeIdx), courseName: cell(nameIdx), classId: m[1], slot: m[2] });
+  }
+  return refs;
+}
+
+export interface AttendanceDetailCounts {
+  present: number;
+  absent: number;
+  onDuty: number;
+  total: number;
+  /** OD time in class-hours (duration-based: a 2-period lab counts as 2). */
+  odHours: number;
+}
+
+function periodsFromTiming(timing: string): number {
+  const m = timing.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+  if (!m) return 1;
+  const dur = (+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2]);
+  return dur <= 0 ? 1 : Math.max(1, Math.round(dur / 50));
+}
+
+/** Parse a per-class attendance detail (processViewAttendanceDetail) and tally statuses. */
+export function parseAttendanceDetail(html: string): AttendanceDetailCounts {
+  const $ = cheerio.load(html);
+  const table = $("table").first();
+  const tbody = table.children("tbody");
+  const rows = tbody.length ? tbody.children("tr") : table.children("tr");
+
+  const headers = $(rows[0])
+    .find("td, th")
+    .map((_i, e) => $(e).text().replace(/\s+/g, " ").trim().toLowerCase())
+    .get();
+  const statusIdx = headers.findIndex((h) => h.includes("status"));
+  const timingIdx = headers.findIndex((h) => h.includes("timing") || (h.includes("day") && h.includes("time")));
+
+  const counts: AttendanceDetailCounts = { present: 0, absent: 0, onDuty: 0, total: 0, odHours: 0 };
+  rows.slice(1).each((_i, r) => {
+    const cells = $(r).find("td").map((_j, e) => $(e).text().replace(/\s+/g, " ").trim()).get();
+    if (cells.length === 0) return;
+    const status = (statusIdx >= 0 ? cells[statusIdx] : cells[cells.length - 1] ?? "").toLowerCase();
+    if (!status) return;
+    counts.total++;
+    if (/on\s*duty/.test(status)) {
+      counts.onDuty++;
+      counts.odHours += periodsFromTiming(timingIdx >= 0 ? cells[timingIdx] ?? "" : "");
+    } else if (/present/.test(status)) counts.present++;
+    else if (/absent/.test(status)) counts.absent++;
+  });
+  return counts;
+}
+
+const MONTH_NUM: Record<string, number> = {
+  JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+  JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12,
+};
+const DAY_ORDER_NAME: Record<string, Weekday> = {
+  SUNDAY: "SUN", MONDAY: "MON", TUESDAY: "TUE", WEDNESDAY: "WED",
+  THURSDAY: "THU", FRIDAY: "FRI", SATURDAY: "SAT",
+};
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** "01-DEC-2025" -> "2025-12" (sortable month key) for range filtering. */
+export function calDateMonthKey(calDate: string): string {
+  const [, mon, yr] = calDate.split("-");
+  const m = MONTH_NUM[(mon ?? "").toUpperCase()];
+  return m ? `${yr}-${pad2(m)}` : "";
+}
+
+/** Extract the month buttons' calDate values (e.g. "01-DEC-2025") from the getListForSemester response. */
+export function parseCalendarMonths(html: string): string[] {
+  return [...new Set(
+    [...html.matchAll(/processViewCalendar\([^)]*?(\d{2}-[A-Z]{3}-\d{4})/g)].map((m) => m[1]),
+  )];
+}
+
+/**
+ * Parse one month's academic-calendar table (the processViewCalendar response).
+ * `calDate` is that month's token, e.g. "01-DEC-2025", used to date each cell.
+ *
+ * Each day cell's spans are [dayNumber, info, detail, ...repeated per program].
+ * A day is instructional when the first info span starts with "Instructional Day"
+ * ("No Instructional Day" is excluded). A working Saturday etc. carries a
+ * "<Weekday> Day Order" note in a detail span telling which timetable it follows.
+ */
+export function parseAcademicCalendar(html: string, calDate: string): CalendarDay[] {
+  const [, mon, yr] = calDate.split("-");
+  const monthNum = MONTH_NUM[(mon ?? "").toUpperCase()];
+  const year = parseInt(yr ?? "", 10);
+  if (!monthNum || !Number.isFinite(year)) return [];
+
+  const $ = cheerio.load(html);
+  const table = $("table.calendar-table").first().length
+    ? $("table.calendar-table").first()
+    : $("#list-wrapper table").first();
+  if (!table.length) return [];
+
+  const days: CalendarDay[] = [];
+  table.find("td").each((_i, td) => {
+    const spans = $(td).find("span").map((_j, s) => $(s).text().replace(/\s+/g, " ").trim()).get();
+    if (!spans.length) return;
+    const day = parseInt(spans[0], 10);
+    if (!Number.isFinite(day) || day < 1 || day > 31) return;
+
+    const info = spans[1] ?? "";
+    const instructional = /^instructional day/i.test(info);
+    const joined = spans.join(" ");
+    const m = joined.match(/(SUNDAY|MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+Day Order/i);
+    const dayOrderWeekday = m ? DAY_ORDER_NAME[m[1].toUpperCase()] : null;
+
+    // Event/holiday text lives in the parenthesised "detail" spans, repeated per
+    // program (Semester/Flexible/LAW/…) — dedupe to a single label.
+    const details = spans
+      .slice(1)
+      .filter((s) => /^\(/.test(s))
+      .map((s) => s.replace(/^\(|\)$/g, "").trim())
+      .filter(Boolean);
+    const label = [...new Set(details)].join(" / ");
+
+    days.push({
+      date: `${year}-${pad2(monthNum)}-${pad2(day)}`,
+      instructional,
+      dayOrderWeekday: instructional ? (dayOrderWeekday ?? null) : null,
+      label,
+    });
+  });
+  return days;
+}
+
 /**
  * Parse marks from examinations/doStudentMarkView response.
  *
@@ -281,104 +542,84 @@ export function parseMarks(html: string): MarksRecord[] {
 
   if (html.toLowerCase().includes("no data found")) return records;
 
-  const table = $("#fixedTableContainer").first();
+  // #fixedTableContainer is a <div> that wraps the marks <table.customTable>.
+  const container = $("#fixedTableContainer").first();
+  if (!container.length) return records;
+  const table = container.is("table") ? container : container.find("table").first();
   if (!table.length) return records;
 
-  const rows = table.find("> tbody > tr, > tr");
+  // Direct rows only (htmlparser2 doesn't auto-insert <tbody>).
+  const tbody = table.children("tbody");
+  const rows = tbody.length ? tbody.children("tr") : table.children("tr");
+  if (!rows.length) return records;
 
-  // Find heading indices from first row
+  // Outer heading row → column indices for the per-course summary row.
   const headings: string[] = [];
-  rows.first().find("td, th").each((_i, el) => {
-    headings.push($(el).text().trim().toLowerCase());
-  });
-
-  const courseTypeIdx = headings.findIndex(
-    (h) => h.includes("course") && h.includes("type")
+  $(rows[0])
+    .find("> td, > th")
+    .each((_i, el) => {
+      headings.push($(el).text().trim().toLowerCase());
+    });
+  const courseCodeIdx = headings.findIndex((h) => h.includes("course") && h.includes("code"));
+  const courseTitleIdx = headings.findIndex(
+    (h) => h.includes("course") && (h.includes("title") || h.includes("name"))
   );
+  const courseTypeIdx = headings.findIndex((h) => h.includes("course") && h.includes("type"));
   const slotIdx = headings.findIndex((h) => h.includes("slot"));
 
+  // Rows alternate: [course summary row] then [row holding the nested marks
+  // table]. Walk summary rows and look ahead one row for the marks table.
   for (let i = 1; i < rows.length; i++) {
     const row = $(rows[i]);
-    const outerCells = row.find("> td");
-
-    if (outerCells.length < 2) continue;
-
-    const courseType =
-      courseTypeIdx >= 0
-        ? $(outerCells[courseTypeIdx]).text().trim()
-        : "";
-    const slot =
-      slotIdx >= 0
-        ? $(outerCells[slotIdx]).text().trim().split("+")[0].trim()
-        : "";
-
-    // Next row contains inner marks table
-    i++;
-    if (i >= rows.length) break;
-
-    const innerRow = $(rows[i]);
-    const innerTable = innerRow.find("table").first();
-    if (!innerTable.length) continue;
-
-    const innerRows = innerTable.find("tr");
-    if (innerRows.length < 2) continue;
-
-    const innerHeadings: string[] = [];
-    $(innerRows[0])
-      .find("td, th")
-      .each((_j, el) => {
-        innerHeadings.push($(el).text().trim().toLowerCase());
-      });
-
-    const titleIdx = innerHeadings.findIndex((h) => h.includes("title"));
-    const maxIdx = innerHeadings.findIndex(
-      (h) => h.includes("max") && !h.includes("weightage")
-    );
-    const scoredIdx = innerHeadings.findIndex((h) => h.includes("scored"));
-    const weightageIdx = innerHeadings.findIndex(
-      (h) => h.includes("weightage") && h.includes("mark")
-    );
-    const maxWeightageIdx = innerHeadings.findIndex((h) => h.includes("%"));
-    const averageIdx = innerHeadings.findIndex((h) =>
-      h.includes("average")
-    );
-    const statusIdx = innerHeadings.findIndex((h) => h.includes("status"));
+    if (row.find("table").length) continue; // nested-table row — consumed below
+    const cells = row.find("> td");
+    if (cells.length < 2) continue;
+    const cell = (idx: number) =>
+      idx >= 0 && idx < cells.length ? $(cells[idx]).text().trim() : "";
 
     const record: MarksRecord = {
-      courseCode: "",
-      courseName: "",
-      courseType,
-      slot,
+      courseCode: cell(courseCodeIdx),
+      courseName: cell(courseTitleIdx),
+      courseType: cell(courseTypeIdx),
+      slot: cell(slotIdx).split("+")[0].trim(),
       marks: [],
     };
 
-    for (let j = 1; j < innerRows.length; j++) {
-      const innerCells = $(innerRows[j]).find("td");
-      const cell = (idx: number) =>
-        idx >= 0 && idx < innerCells.length
-          ? $(innerCells[idx]).text().trim()
-          : "";
+    const innerTable = i + 1 < rows.length ? $(rows[i + 1]).find("table").first() : $();
+    if (innerTable.length) {
+      const innerRows = innerTable.find("tr");
+      const ih: string[] = [];
+      $(innerRows[0])
+        .find("td, th")
+        .each((_j, el) => {
+          ih.push($(el).text().trim().toLowerCase());
+        });
+      const titleIdx = ih.findIndex((h) => h.includes("title"));
+      const maxIdx = ih.findIndex((h) => h.includes("max") && !h.includes("weightage"));
+      const scoredIdx = ih.findIndex((h) => h.includes("scored"));
+      const weightageIdx = ih.findIndex((h) => h.includes("weightage") && h.includes("mark"));
+      const maxWeightageIdx = ih.findIndex((h) => h.includes("%"));
+      const averageIdx = ih.findIndex((h) => h.includes("average"));
+      const statusIdx = ih.findIndex((h) => h.includes("status"));
 
-      const title = cell(titleIdx);
-      if (!title) continue;
-
-      record.marks.push({
-        component: title,
-        maxMarks: parseFloat(cell(maxIdx)) || 0,
-        scored: parseFloat(cell(scoredIdx)) || 0,
-        maxWeightage: parseFloat(cell(maxWeightageIdx)) || 0,
-        weightage: parseFloat(cell(weightageIdx)) || 0,
-        average: parseFloat(cell(averageIdx)) || null,
-        status: cell(statusIdx),
-      });
+      for (let j = 1; j < innerRows.length; j++) {
+        const ic = $(innerRows[j]).find("td");
+        const c = (idx: number) => (idx >= 0 && idx < ic.length ? $(ic[idx]).text().trim() : "");
+        const title = c(titleIdx);
+        if (!title) continue;
+        record.marks.push({
+          component: title,
+          maxMarks: parseFloat(c(maxIdx)) || 0,
+          scored: parseFloat(c(scoredIdx)) || 0,
+          maxWeightage: parseFloat(c(maxWeightageIdx)) || 0,
+          weightage: parseFloat(c(weightageIdx)) || 0,
+          average: parseFloat(c(averageIdx)) || null,
+          status: c(statusIdx),
+        });
+      }
     }
 
-    // Skip inner table rows in outer loop
-    i += innerRows.length;
-
-    if (record.marks.length > 0) {
-      records.push(record);
-    }
+    if (record.courseCode || record.marks.length > 0) records.push(record);
   }
 
   return records;
