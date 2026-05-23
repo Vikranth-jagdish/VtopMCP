@@ -104,6 +104,10 @@ export class VtopClient {
   // Timetable is static for a semester — cache it so getCurrentSemesterId,
   // calculate_attendance and get_today_classes don't refetch it.
   private cachedTimetableHtml = new Map<string, string>();
+  // Static-per-session identity/enrolment data (safe to cache; not the live
+  // "status" pages like attendance/marks, which stay fresh / uncached).
+  private cachedSemesters: { id: string; name: string }[] | null = null;
+  private cachedProfileHtml: string | null = null;
 
   constructor(baseUrl?: string) {
     applySystemCATrust();
@@ -350,6 +354,8 @@ export class VtopClient {
     this.cachedCalendarMonths = null;
     this.cachedCalendarDays = {};
     this.cachedTimetableHtml.clear();
+    this.cachedSemesters = null;
+    this.cachedProfileHtml = null;
   }
 
   /** Timetable HTML for a semester, cached for the session (it doesn't change). */
@@ -409,6 +415,7 @@ export class VtopClient {
 
   async getSemesters(): Promise<{ id: string; name: string }[]> {
     this.ensureAuthenticated();
+    if (this.cachedSemesters) return this.cachedSemesters;
     const html = await this.postWithAuth(ENDPOINTS.timetableForSemesters, {
       verifyMenu: "true",
       nocache: String(Date.now()),
@@ -422,7 +429,19 @@ export class VtopClient {
       const name = match[2].trim();
       if (id) semesters.push({ id, name });
     }
+    this.cachedSemesters = semesters;
     return semesters;
+  }
+
+  /** Profile HTML, cached for the session (it doesn't change). */
+  async getProfileHtml(): Promise<string> {
+    if (this.cachedProfileHtml) return this.cachedProfileHtml;
+    const html = await this.fetchPage(ENDPOINTS.profile, {
+      verifyMenu: "true",
+      nocache: String(Date.now()),
+    });
+    this.cachedProfileHtml = html;
+    return html;
   }
 
   /**
