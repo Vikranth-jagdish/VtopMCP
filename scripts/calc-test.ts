@@ -12,6 +12,7 @@ import {
   percentOf,
   projectCourse,
   projectDeadline,
+  planBunk,
   listUpcomingClassDays,
   countUpcoming,
   weekdayOf,
@@ -100,6 +101,16 @@ check("projectDeadline: partial - must attend some", () => {
   assert.equal(d.maxSkippableInRange, 5);
   assert.equal(d.mustAttendInRange, 5);
   assert.equal(d.canBeSafeByDeadline, true);
+});
+check("planBunk: skip today then attend the rest", () => {
+  // at the line: 37/50 = 74.0 (debarred). 6 sessions left before closing.
+  // skip 1 (today), attend the other 5 -> (37+5)/(50+6) = 42/56 = 75% -> safe.
+  const p = planBunk(37, 50, 6, 1);
+  assert.equal(p.bunkedSessions, 1);
+  assert.equal(p.finalPercentIfAttendRest, 75);
+  assert.equal(p.safe, true);
+  // skip 2 -> 41/56 = 73.2% -> not safe (below 74).
+  assert.equal(planBunk(37, 50, 6, 2).safe, false);
 });
 check("projectDeadline: unreachable by deadline", () => {
   const d = projectDeadline(30, 50, 10, "2026-06-01");

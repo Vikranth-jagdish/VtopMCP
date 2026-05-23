@@ -114,6 +114,39 @@ export interface AttendanceProjection {
   advice: string;
   /** Date-aware fields, only present when an until-date projection was requested. */
   deadline?: DeadlineProjection;
+  /** "If I skip these specific days and attend everything else" — only when bunkDates given. */
+  plannedBunk?: BunkScenario;
+}
+
+export interface BunkScenario {
+  /** Sessions of this course that fall on the planned bunk dates. */
+  bunkedSessions: number;
+  /** Final % if you skip exactly those sessions and attend all other upcoming ones. */
+  finalPercentIfAttendRest: number;
+  /** True if that final % is still above the threshold (i.e. recoverable after the bunk). */
+  safe: boolean;
+}
+
+/**
+ * Scenario math: skip `bunked` of the `upcoming` sessions (the planned days) and
+ * attend the rest. finalAttended = a + (u - bunked), finalTotal = n + u.
+ */
+export function planBunk(
+  attended: number,
+  total: number,
+  upcoming: number,
+  bunked: number,
+  targetPercent: number = SAFE_THRESHOLD_PERCENT,
+): BunkScenario {
+  const u = Math.max(0, upcoming);
+  const b = Math.min(u, Math.max(0, bunked));
+  const finalTotal = total + u;
+  const frac = finalTotal > 0 ? (attended + (u - b)) / finalTotal : 0;
+  return {
+    bunkedSessions: b,
+    finalPercentIfAttendRest: round2(frac * 100),
+    safe: frac > targetPercent / 100,
+  };
 }
 
 export interface DeadlineProjection {

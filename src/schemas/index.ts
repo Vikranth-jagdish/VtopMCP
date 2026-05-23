@@ -54,6 +54,12 @@ export const CalcAttendanceSchema = z.object({
     .boolean()
     .optional()
     .describe("Whether classes ON the closing date are counted. Default true."),
+  bunkDates: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Dates (ISO YYYY-MM-DD) you plan to SKIP — e.g. today. Requires untilDate. For each course the tool reports whether you'd still be safe by the closing date if you skip exactly these days and attend everything else (`plannedBunk`).",
+    ),
 });
 
 export const GpaCalcSchema = z.object({
