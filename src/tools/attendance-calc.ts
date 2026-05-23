@@ -5,6 +5,7 @@ import {
   SAFE_THRESHOLD_PERCENT,
   projectAll,
   projectDeadline,
+  planBunk,
   listUpcomingClassDays,
   countUpcoming,
 } from "../services/attendance-calc.js";
@@ -21,9 +22,11 @@ export function registerAttendanceCalcTool(server: McpServer, client: VtopClient
   mkJsonTool(
     server,
     "calculate_attendance",
-    "Attendance / bunk calculator. Per course: current %, whether you're safe, how many more classes you can skip ('bunkBuffer'), and how many to attend to recover ('classesToRecover'). Safe threshold defaults to 74% (VIT needs 75%, but 74.x rounds up); override with targetPercent. Provide untilDate (an attendance-closing / CAT cutoff date, ISO YYYY-MM-DD) to project real classes from today to that date using the timetable + academic calendar (holidays, working Saturdays) — returns, per course, upcomingSessions, the % if you attend/skip all, how many of the upcoming you can miss (maxSkippableInRange), how many you must attend (mustAttendInRange), and whether you can be safe by the deadline; plus a perDay breakdown. Ask the user for the closing date (and whether that day counts) when they want a deadline answer. If the response contains NOT_AUTHENTICATED, call get_captcha then login then retry. login auto-uses VTOP_USERNAME/VTOP_PASSWORD env vars if set; if it reports credentials missing, ask the user for them. Requires login.",
+    "Attendance / bunk calculator. Per course: current %, whether you're safe (strictly above 74.0% by default — 74.0 is debarred; override via targetPercent), how many more classes you can skip ('bunkBuffer'), and how many to attend to recover ('classesToRecover'). " +
+      "For the key real use case — 'I'm at the line; if I skip today can I still make 75% by the time attendance closes?' — pass `untilDate` (the attendance-closing date; ASK THE USER for it) and `bunkDates` (the days you'd skip, e.g. today's date). Using the timetable + academic calendar (holidays, working Saturdays / day-orders) it returns per course: `upcomingSessions` until the deadline, `ifAttendAllPercent`/`ifSkipAllPercent`, `maxSkippableInRange`, `mustAttendInRange`, `canBeSafeByDeadline`, and — when `bunkDates` is given — `plannedBunk` (your final % and whether you're still safe if you skip exactly those days and attend everything else). Also returns a `perDay` breakdown of which classes fall on each upcoming day. " +
+      "If the response contains NOT_AUTHENTICATED, call get_captcha then login then retry. login auto-uses VTOP_USERNAME/VTOP_PASSWORD env vars if set; if it reports credentials missing, ask the user for them. Requires login.",
     CalcAttendanceSchema.shape,
-    async ({ semesterId, courseCode, targetPercent, untilDate, includeUntilDate }) => {
+    async ({ semesterId, courseCode, targetPercent, untilDate, includeUntilDate, bunkDates }) => {
       const id = semesterId ?? (await client.getCurrentSemesterId());
       const attHtml = await client.fetchPage(ENDPOINTS.attendance, { semesterSubId: id });
       let records = parseAttendance(attHtml);
@@ -55,8 +58,16 @@ export function registerAttendanceCalcTool(server: McpServer, client: VtopClient
       const days = listUpcomingClassDays(schedule, calendar, from, untilDate, includeUntilDate ?? true);
       const counts = countUpcoming(days);
 
+      // Sessions on the specific days the user plans to skip.
+      const bunkSet = new Set(bunkDates ?? []);
+      const bunkedCounts = bunkSet.size > 0 ? countUpcoming(days.filter((d) => bunkSet.has(d.date))) : {};
+
       for (const c of courses) {
-        c.deadline = projectDeadline(c.attended, c.total, counts[c.courseCode] ?? 0, untilDate, threshold);
+        const u = counts[c.courseCode] ?? 0;
+        c.deadline = projectDeadline(c.attended, c.total, u, untilDate, threshold);
+        if (bunkSet.size > 0) {
+          c.plannedBunk = planBunk(c.attended, c.total, u, bunkedCounts[c.courseCode] ?? 0, threshold);
+        }
       }
 
       const perDay = days
@@ -71,6 +82,7 @@ export function registerAttendanceCalcTool(server: McpServer, client: VtopClient
         thresholdPercent: threshold,
         untilDate,
         from,
+        ...(bunkSet.size > 0 ? { bunkDates: [...bunkSet] } : {}),
         overallSafe: courses.every((c) => c.isSafe),
         courses,
         perDay,

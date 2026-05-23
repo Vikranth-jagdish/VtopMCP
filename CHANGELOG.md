@@ -29,7 +29,9 @@ alters VTOP's HTML.
   (e.g. a CAT attendance-closing date) it projects every real class from today
   to that date using the timetable grid + academic calendar (holidays, working
   Saturdays / day-orders) and reports how many upcoming classes you can miss or
-  must attend to be safe by the deadline.
+  must attend to be safe by the deadline. Pass `bunkDates` (e.g. today) to ask
+  directly "if I skip these days and attend the rest, am I still safe by the
+  closing date?" — returns a per-course `plannedBunk` (final % + safe/not).
 - **`get_today_classes` tool.** Today's (or any date's) classes with time and
   venue, calendar-aware — returns a holiday result on non-instructional days and
   follows the correct day-order on working Saturdays.
