@@ -1,6 +1,8 @@
 import axios, { AxiosInstance } from "axios";
 import { wrapper } from "axios-cookiejar-support";
 import { CookieJar } from "tough-cookie";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { createCookieAgent } from "http-cookie-agent/http";
 import {
   COURSE_CODE_PATTERN,
   ENDPOINTS,
@@ -10,6 +12,29 @@ import {
 import { applySystemCATrust } from "./tls.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
+
+// An https-proxy agent that also reads/writes the cookie jar at the socket
+// level. axios-cookiejar-support's wrapper() refuses a foreign http(s).Agent,
+// so when proxying we hand cookie handling to this composed agent instead.
+const HttpsProxyCookieAgent = createCookieAgent(HttpsProxyAgent);
+
+/**
+ * Resolve a proxy URL from the environment, or undefined for a direct
+ * connection. VTOP serves a Google reCAPTCHA (which this server can't read)
+ * instead of the OCR-able image captcha when its risk score is high, and a
+ * datacenter/cloud egress IP (e.g. a PaaS host) reliably trips that. Routing
+ * VTOP traffic through a residential/mobile proxy lowers the score so the image
+ * variant is served. VTOP_PROXY_URL scopes the proxy to VTOP only; HTTPS_PROXY
+ * is honored as a fallback.
+ */
+function resolveProxyUrl(): string | undefined {
+  return (
+    process.env.VTOP_PROXY_URL ||
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    undefined
+  );
+}
 
 const AUTH_ID_RE =
   /id="authorizedIDX"\s+value="([^"]+)"|value="([^"]+)"\s+id="authorizedIDX"/;
@@ -68,23 +93,38 @@ export class VtopClient {
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
 
     const jar = new CookieJar();
-    this.client = wrapper(
-      axios.create({
-        jar,
-        baseURL: this.baseUrl,
-        withCredentials: true,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.5",
-          Referer: this.baseUrl + "/login",
-        },
-        maxRedirects: 5,
-        timeout: 30_000,
-      })
-    );
+    const config = {
+      baseURL: this.baseUrl,
+      withCredentials: true,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        Referer: this.baseUrl + "/login",
+      },
+      maxRedirects: 5,
+      timeout: 30_000,
+    };
+
+    const proxyUrl = resolveProxyUrl();
+    if (proxyUrl) {
+      // Proxy path: a single agent both tunnels through the proxy and syncs the
+      // cookie jar (so we skip wrapper(), which can't coexist with our agent).
+      // proxy:false stops axios's own env-proxy logic from double-tunneling.
+      console.error(
+        `VtopMCP: routing VTOP traffic through proxy ${proxyUrl.replace(/\/\/[^@/]+@/, "//***@")}`,
+      );
+      this.client = axios.create({
+        ...config,
+        httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar } }),
+        proxy: false,
+      });
+    } else {
+      // Direct path: axios-cookiejar-support manages cookies via its own agent.
+      this.client = wrapper(axios.create({ ...config, jar }));
+    }
   }
 
   get isAuthenticated(): boolean {

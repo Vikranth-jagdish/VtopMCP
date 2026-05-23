@@ -156,6 +156,7 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `VTOP_PASSWORD` | Optional | — | Auto-login password. **If unset, the assistant asks you for it in the chat.** Never stored on disk when entered this way. |
 | `CONNECTOR_SECRET` | Optional | — | Set a long random string to enable **multi-user mode** on the HTTP connector: users self-register at `/register` and get an encrypted token. See [Multi-user mode](#multi-user-mode-one-connector-many-users). Leave unset for single-user mode. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
+| `VTOP_PROXY_URL` | Optional | — | Route VTOP traffic through an HTTP(S) proxy, e.g. `http://user:pass@host:port`. Use a **residential/mobile** proxy when hosting on a datacenter/cloud IP: VTOP raises its risk score for such IPs and serves a Google reCAPTCHA (which this server can't read) instead of the OCR-able image captcha. Falls back to the standard `HTTPS_PROXY` if unset. |
 | `VTOP_INSECURE_TLS` | Optional | — | Set to `1` only if you still hit `unable to verify the first certificate` (a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide — use only on a trusted network.** |
 
 ### Campuses
