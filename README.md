@@ -105,6 +105,24 @@ Verify it's up: `GET https://<host>/` returns `{"name":"vtop-mcp","transport":"s
 
 > ⚠️ **Captcha caveat.** Login needs a CAPTCHA the model reads from an image. Claude clients OCR the image tool-result natively; whether ChatGPT feeds MCP image results to the model for OCR is **not guaranteed** and may fail or require you to set credentials. If you hit this, the fallback is to bake your own credentials in via `VTOP_USERNAME` / `VTOP_PASSWORD` env vars on the host — but because this endpoint is unauthenticated and single-tenant, **only do that on a deployment that's exclusively yours.**
 
+> ℹ️ **Why ChatGPT can't take your password in chat.** ChatGPT's safety layer refuses to pass credentials into a tool call, so the in-chat login flow stalls on ChatGPT (it works on Claude clients). Use either single-user env vars (above) or **multi-user mode** (below).
+
+### Multi-user mode (one connector, many users)
+
+To let several people share **one** deployment without anyone typing a password into chat, set a `CONNECTOR_SECRET` env var (a long random string). This turns on a self-service token flow:
+
+1. Deploy with `CONNECTOR_SECRET` set, e.g.
+   ```bash
+   CONNECTOR_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
+   ```
+   (Set it in Render → *Environment*. Don't also set `VTOP_USERNAME`/`VTOP_PASSWORD` — those force single-user mode.)
+2. Each user opens **`https://<host>/register`**, enters their own VTOP credentials, and gets a **token**.
+3. In ChatGPT, they add the connector at **`https://<host>/mcp`** and paste that token as the connector's **API key / Authorization** value (sent as `Authorization: Bearer <token>`).
+
+How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued token (the only way to revoke).
+
+> ⚠️ This is still a **trust-the-operator** model: whoever runs the server holds `CONNECTOR_SECRET` and can technically decrypt tokens (the server must know each user's password to log into VTOP). Only register on a deployment you trust. Also note ChatGPT must expose an API-key/Authorization field when adding a custom connector for this to work end-to-end.
+
 ---
 
 ## Available tools (12)
@@ -134,6 +152,7 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 |---|---|---|---|
 | `VTOP_USERNAME` | Optional | — | Auto-login username. **If unset, the assistant asks you for it in the chat the first time** you request VTOP data. |
 | `VTOP_PASSWORD` | Optional | — | Auto-login password. **If unset, the assistant asks you for it in the chat.** Never stored on disk when entered this way. |
+| `CONNECTOR_SECRET` | Optional | — | Set a long random string to enable **multi-user mode** on the HTTP connector: users self-register at `/register` and get an encrypted token. See [Multi-user mode](#multi-user-mode-one-connector-many-users). Leave unset for single-user mode. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
 | `VTOP_INSECURE_TLS` | Optional | — | Set to `1` only if you still hit `unable to verify the first certificate` (a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide — use only on a trusted network.** |
 

@@ -1,9 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VtopClient } from "../services/vtop-client.js";
+import type { Credentials } from "../types/index.js";
 import { LoginSchema, EmptySchema } from "../schemas/index.js";
 import { mkJsonTool } from "./_helpers.js";
 
-export function registerAuthTools(server: McpServer, client: VtopClient) {
+export function registerAuthTools(
+  server: McpServer,
+  client: VtopClient,
+  credentials?: Credentials,
+) {
   // get_captcha returns an image content item, not JSON — use server.tool directly.
   server.tool(
     "get_captcha",
@@ -48,8 +53,8 @@ export function registerAuthTools(server: McpServer, client: VtopClient) {
     "Step 2 of login: submit credentials + the captcha you just OCR'd. Username/password are optional — if VTOP_USERNAME and VTOP_PASSWORD are set as env vars on the MCP server, omit them and the server uses the stored values. Only ask the user for credentials if the server reports they're not configured.",
     LoginSchema.shape,
     async ({ username, password, captcha }) => {
-      const user = username ?? process.env.VTOP_USERNAME;
-      const pass = password ?? process.env.VTOP_PASSWORD;
+      const user = username ?? credentials?.username ?? process.env.VTOP_USERNAME;
+      const pass = password ?? credentials?.password ?? process.env.VTOP_PASSWORD;
       if (!user || !pass) {
         return {
           content: [

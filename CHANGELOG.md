@@ -16,6 +16,17 @@ alters VTOP's HTML.
 - `Dockerfile`, `.dockerignore`, and a Render blueprint (`render.yaml`) for
   one-click deployment to a public HTTPS URL.
 - `npm run start:http` script and `express` dependency for the HTTP server.
+- **Multi-user mode for the HTTP connector.** Setting a `CONNECTOR_SECRET` env
+  var turns one shared deployment into a multi-user one without anyone typing a
+  password into chat (which ChatGPT's safety layer blocks). Users self-register
+  at `GET/POST /register` and receive a token that is their VTOP credentials
+  encrypted with AES-256-GCM (`src/services/crypto.ts`); they paste it into
+  their ChatGPT connector's API key / Authorization field. The `/mcp` endpoint
+  now authenticates `Authorization: Bearer <token>` and binds the decrypted
+  credentials to that session. Stateless — nothing is stored server-side, so no
+  database is required. Rotating `CONNECTOR_SECRET` revokes all tokens. When
+  `CONNECTOR_SECRET` is unset the server stays single-user and backward
+  compatible (no token required).
 
 ### Fixed
 - **TLS "unable to verify the first certificate" against VTOP.** Node ignores
