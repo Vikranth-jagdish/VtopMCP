@@ -83,6 +83,18 @@ alters VTOP's HTML.
   and no client-side framework — kept server-rendered for instant loads and
   crawlability.
 
+### Performance
+- **Parallelized the slow multi-request tools.** `calculate_od` fetched each
+  course's attendance detail sequentially (~9 round trips) and the academic
+  calendar fetched months one by one — both now run with bounded concurrency
+  (`src/services/concurrency.ts`), and the semester auto-detect probes its
+  candidate timetables concurrently instead of in series. Timetable HTML is
+  cached per semester (it's static) so `calculate_attendance` / `get_today_classes`
+  don't refetch it.
+- **Read-only tools now carry `readOnlyHint` annotations**, so MCP clients can
+  streamline / auto-approve them (login, logout and get_captcha stay unmarked
+  since they change session state).
+
 ### Fixed
 - **`get_marks` returned "not available" even when marks were published.**
   `parseMarks` treated `#fixedTableContainer` (a `<div>`) as the marks table, so
