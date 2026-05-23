@@ -15,6 +15,13 @@ const AUTHOR_NAME = "Vikranth";
 const NPM_PKG = "@vikranth2005/vtop-mcp";
 const NPM_URL = "https://www.npmjs.com/package/@vikranth2005/vtop-mcp";
 
+// Deep link straight to ChatGPT's Apps → Developer-mode page. ChatGPT has no
+// install/prefill API and same-origin rules forbid us from touching its tab,
+// so this is the closest one-click flow possible: drop the user on the exact
+// page and copy the URL, leaving only flip-toggle, Create, paste.
+const CHATGPT_CONNECTORS_URL =
+  "https://chatgpt.com/apps#settings/Connectors/Advanced";
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -30,6 +37,8 @@ const copyIcon =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.6"/><path d="M3.5 10H2.7A1.2 1.2 0 0 1 1.5 8.8V2.7A1.2 1.2 0 0 1 2.7 1.5h6.1A1.2 1.2 0 0 1 10 2.7v.8"/></svg>';
 const arrowIcon =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg>';
+const linkOutIcon =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5H13v3.5M13 2.5 7.5 8"/><path d="M11 9.5v2.8A1.2 1.2 0 0 1 9.8 13.5H3.7A1.2 1.2 0 0 1 2.5 12.3V6.2A1.2 1.2 0 0 1 3.7 5h2.8"/></svg>';
 
 const STYLE = `
 :root{
@@ -116,6 +125,8 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 4px var(--ring)}
 .btn:hover{opacity:.9}
 .btn:active{transform:translateY(1px)}
 .btn svg{width:15px;height:15px}
+.btn.cta{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.connect-hint{margin-top:12px;color:var(--faint);font-size:13px;line-height:1.55;text-align:center}
 
 /* steps */
 ol.steps{list-style:none}
@@ -268,6 +279,14 @@ document.addEventListener("click",function(e){
     c.classList.add("copied");var s=c.querySelector("span");var t=s?s.textContent:"";
     if(s)s.textContent="Copied";setTimeout(function(){c.classList.remove("copied");if(s)s.textContent=t;},1700);
   });}
+  // Connect button: copy the link, then let the anchor open ChatGPT in a new
+  // tab (no preventDefault, so target=_blank works without popup blocking).
+  var k=e.target.closest("[data-connect]");
+  if(k){var u=k.getAttribute("data-connect");
+    if(u&&navigator.clipboard)navigator.clipboard.writeText(u).catch(function(){});
+    var ks=k.querySelector("span");var kt=ks?ks.textContent:"";
+    if(ks){ks.textContent="Link copied — opening…";setTimeout(function(){if(ks)ks.textContent=kt;},2200);}
+  }
   var t=e.target.closest("[data-toggle]");
   if(t){var i=document.getElementById(t.getAttribute("data-toggle"));
     if(i){var p=i.type==="password";i.type=p?"text":"password";t.textContent=p?"Hide":"Show";}}
@@ -373,6 +392,8 @@ export function resultPage(opts: {
     <pre>${safeUrl}</pre>
     <button class="copy" data-copy="${safeUrl}">${copyIcon}<span>Copy</span></button>
   </div>
+  <a class="btn cta" href="${CHATGPT_CONNECTORS_URL}" target="_blank" rel="noopener" data-connect="${safeUrl}"><span>Connect to ChatGPT</span>${linkOutIcon}</a>
+  <p class="connect-hint">Copies your link and opens ChatGPT's <em>Apps → Developer mode</em> page in a new tab. Then just turn it on, hit Create, and paste — your link is already on the clipboard. (Steps below.)</p>
 </section>
 <section id="how" style="padding-top:8px">
   <div class="kicker"><h2 class="serif">How to set it up in ChatGPT</h2><span class="line"></span></div>
