@@ -4,5 +4,8 @@ dist/
 *.tsbuildinfo
 test-output/
 
+# Diagnostic artifact written by scripts/captcha-debug.ts
+captcha-page.html
+
 # Local Claude Code tooling settings
 .claude/settings.local.json

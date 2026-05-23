@@ -142,11 +142,14 @@ export class VtopClient {
    * The Android app does the equivalent of $('#captchaBlock img').src.
    */
   async getCaptcha(): Promise<string> {
-    // VTOP intermittently omits the image captcha (and may flip to reCAPTCHA)
-    // after rapid attempts. The image case is usually transient, so retry a few
-    // times; bail early with a clear message if a real reCAPTCHA is active.
+    // VTOP serves one of two login pages by risk score: an OCR-able image
+    // captcha, or a Google reCAPTCHA (which this server can't read). The variant
+    // flips between prelogin rounds, so when reCAPTCHA shows up we re-roll the
+    // session a few times to try to land on the image variant before giving up.
+    const MAX_ATTEMPTS = 4;
     let lastHtml = "";
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    let sawRecaptcha = false;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const html = await this.initSession();
       lastHtml = html;
 
@@ -159,17 +162,21 @@ export class VtopClient {
         );
       if (match) return match[1];
 
-      if (/data-sitekey="[^"]+"/i.test(html)) {
-        throw new Error(
-          "VTOP is currently showing a Google reCAPTCHA instead of the image captcha. " +
-            "This usually happens after several rapid login attempts — wait a few " +
-            `minutes and try again. ${describeLoginPage(html)}`,
-        );
-      }
+      if (/data-sitekey="[^"]+"/i.test(html)) sawRecaptcha = true;
 
-      if (attempt < 3) {
-        await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
       }
+    }
+
+    if (sawRecaptcha) {
+      throw new Error(
+        "VTOP kept serving a Google reCAPTCHA instead of the image captcha across " +
+          `${MAX_ATTEMPTS} attempts, so no readable captcha could be obtained. VTOP shows ` +
+          "reCAPTCHA when its risk score is high — typically from a datacenter/cloud IP " +
+          "(e.g. the hosting provider) or many recent login attempts. Wait a few minutes " +
+          `and try again. ${describeLoginPage(lastHtml)}`,
+      );
     }
 
     throw new Error(
@@ -252,6 +259,20 @@ export class VtopClient {
       };
     } catch (err: unknown) {
       this.authenticated = false;
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      // VTOP returns a Tomcat 404 on POST /login when the session wasn't armed
+      // by the prelogin handshake — i.e. this captcha belongs to a different
+      // session than the one we're posting from. The captcha can't be replayed
+      // on a fresh session, so the only recovery is a brand-new captcha.
+      if (status === 404 || /status code 404/.test(String(err))) {
+        return {
+          success: false,
+          message:
+            "Login could not be completed: VTOP did not recognize this captcha's " +
+            "session (it returned 404). Call get_captcha again to get a fresh captcha, " +
+            "then call login with that new captcha.",
+        };
+      }
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, message: `Login request failed: ${msg}` };
     }

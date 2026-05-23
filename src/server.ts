@@ -10,7 +10,10 @@ import { registerGradesTool } from "./tools/grades.js";
 import { registerProfileTool } from "./tools/profile.js";
 import { registerCurriculumTool } from "./tools/curriculum.js";
 
-export function createServer(credentials?: Credentials): {
+export function createServer(
+  credentials?: Credentials,
+  sharedClient?: VtopClient,
+): {
   server: McpServer;
   client: VtopClient;
 } {
@@ -19,7 +22,11 @@ export function createServer(credentials?: Credentials): {
     version: "0.1.5",
   });
 
-  const client = new VtopClient();
+  // In multi-user HTTP mode the caller passes a client shared across all of a
+  // user's MCP sessions, so the session armed by get_captcha is the same one
+  // login uses (some clients open a fresh MCP session per tool call). Falls
+  // back to a fresh client for stdio / single-call use.
+  const client = sharedClient ?? new VtopClient();
 
   // Register all tools. `credentials`, when present, are the per-user VTOP
   // credentials decrypted from the connector token (multi-user HTTP mode).

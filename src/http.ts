@@ -3,6 +3,7 @@ import express, { type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "./server.js";
+import { VtopClient } from "./services/vtop-client.js";
 import type { Credentials } from "./types/index.js";
 import {
   decryptCredentials,
@@ -21,10 +22,35 @@ import {
 const PORT = Number(process.env.PORT ?? 3000);
 const MCP_PATH = process.env.MCP_PATH ?? "/mcp";
 
-// One transport per active MCP session. Each session also gets its own
-// MCP server instance (and therefore its own VtopClient + cookie jar), so
-// concurrent users never share login state on this remote endpoint.
+// One transport per active MCP session. Each session gets its own MCP server
+// instance, but the underlying VtopClient is shared per user (see below).
 const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+// One VtopClient (cookie jar + login state) per user, keyed by connector token
+// (or a single key in single-user mode). Crucially this is NOT keyed by MCP
+// session: ChatGPT's connector may open a fresh MCP session for each tool call,
+// so get_captcha and login can land on different sessions. The captcha is bound
+// to the prelogin session that produced it, so login must reuse the exact
+// VtopClient get_captcha armed — otherwise VTOP returns a 404 on POST /login.
+// Different tokens stay isolated (one user's session never leaks to another).
+const SINGLE_USER_KEY = "__single_user__";
+const CLIENT_TTL_MS = 30 * 60 * 1000; // evict idle clients after 30 min
+const clientsByUser = new Map<string, { client: VtopClient; lastUsed: number }>();
+
+function getSharedClient(key: string): VtopClient {
+  const now = Date.now();
+  for (const [k, entry] of clientsByUser) {
+    if (now - entry.lastUsed > CLIENT_TTL_MS) clientsByUser.delete(k);
+  }
+  const existing = clientsByUser.get(key);
+  if (existing) {
+    existing.lastUsed = now;
+    return existing.client;
+  }
+  const client = new VtopClient();
+  clientsByUser.set(key, { client, lastUsed: now });
+  return client;
+}
 
 const app = express();
 // Render (and most PaaS) terminate TLS at a proxy; trust it so req.protocol is
@@ -152,8 +178,13 @@ async function handleMcpPost(req: Request, res: Response) {
       if (transport.sessionId) delete transports[transport.sessionId];
     };
 
+    // Reuse this user's VtopClient across MCP sessions so the prelogin session
+    // armed by get_captcha is the same one login submits to. Keyed by token in
+    // multi-user mode (per-user isolation) or a single key otherwise.
+    const client = getSharedClient(extractToken(req) ?? SINGLE_USER_KEY);
+
     // Bind the authenticated user's credentials to this session's server.
-    const { server } = createServer(auth.credentials);
+    const { server } = createServer(auth.credentials, client);
     await server.connect(transport);
   } else {
     res.status(400).json({
