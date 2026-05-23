@@ -109,19 +109,21 @@ Verify it's up: `GET https://<host>/` returns `{"name":"vtop-mcp","transport":"s
 
 ### Multi-user mode (one connector, many users)
 
-To let several people share **one** deployment without anyone typing a password into chat, set a `CONNECTOR_SECRET` env var (a long random string). This turns on a self-service token flow:
+To let several people share **one** deployment without anyone typing a password into chat, set a `CONNECTOR_SECRET` env var (a long random string). This turns on a self-service flow where each user gets a **personal connector link**.
 
 1. Deploy with `CONNECTOR_SECRET` set, e.g.
    ```bash
    CONNECTOR_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
    ```
    (Set it in Render → *Environment*. Don't also set `VTOP_USERNAME`/`VTOP_PASSWORD` — those force single-user mode.)
-2. Each user opens **`https://<host>/register`**, enters their own VTOP credentials, and gets a **token**.
-3. In ChatGPT, they add the connector at **`https://<host>/mcp`** and paste that token as the connector's **API key / Authorization** value (sent as `Authorization: Bearer <token>`).
+2. Each user opens **`https://<host>/register`** and enters their own VTOP credentials. They get back a personal URL: **`https://<host>/mcp/<token>`**.
+3. In ChatGPT: **Settings → Connectors → Create**, paste that **`/mcp/<token>`** URL as the MCP Server URL, and choose **Authentication: No Auth**. Done — no password ever goes into chat.
 
-How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued token (the only way to revoke).
+ChatGPT's connector UI only offers OAuth / No Auth (no API-key field), so the token rides **in the URL path** and each user simply uses their own URL. Clients that *do* support auth headers (Claude Desktop, Cursor) can instead use the base `https://<host>/mcp` URL with `Authorization: Bearer <token>` — the `/register` page shows both.
 
-> ⚠️ This is still a **trust-the-operator** model: whoever runs the server holds `CONNECTOR_SECRET` and can technically decrypt tokens (the server must know each user's password to log into VTOP). Only register on a deployment you trust. Also note ChatGPT must expose an API-key/Authorization field when adding a custom connector for this to work end-to-end.
+How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued link (the only way to revoke).
+
+> ⚠️ **Trust-the-operator model.** Whoever runs the server holds `CONNECTOR_SECRET` and can technically decrypt links (the server must know each user's password to log into VTOP). Only register on a deployment you trust. Note also that because the token is in the URL, it will appear in the host's HTTP access logs — acceptable for personal/student use, but if you need it kept out of logs, use the header form or wait for OAuth support.
 
 ---
 

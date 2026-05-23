@@ -19,12 +19,15 @@ alters VTOP's HTML.
 - **Multi-user mode for the HTTP connector.** Setting a `CONNECTOR_SECRET` env
   var turns one shared deployment into a multi-user one without anyone typing a
   password into chat (which ChatGPT's safety layer blocks). Users self-register
-  at `GET/POST /register` and receive a token that is their VTOP credentials
-  encrypted with AES-256-GCM (`src/services/crypto.ts`); they paste it into
-  their ChatGPT connector's API key / Authorization field. The `/mcp` endpoint
-  now authenticates `Authorization: Bearer <token>` and binds the decrypted
-  credentials to that session. Stateless — nothing is stored server-side, so no
-  database is required. Rotating `CONNECTOR_SECRET` revokes all tokens. When
+  at `GET/POST /register` and receive a personal connector link
+  (`https://<host>/mcp/<token>`) where `<token>` is their VTOP credentials
+  encrypted with AES-256-GCM (`src/services/crypto.ts`). They add that URL in
+  ChatGPT with **No Auth** — ChatGPT's connector UI has no API-key field, so the
+  token travels in the URL path. The `/mcp/:token` route (and `Authorization:
+  Bearer <token>` for header-capable clients like Claude Desktop / Cursor)
+  authenticates the request and binds the decrypted credentials to that MCP
+  session. Stateless — nothing is stored server-side, so no database is
+  required. Rotating `CONNECTOR_SECRET` revokes all links. When
   `CONNECTOR_SECRET` is unset the server stays single-user and backward
   compatible (no token required).
 

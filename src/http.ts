@@ -19,6 +19,9 @@ const MCP_PATH = process.env.MCP_PATH ?? "/mcp";
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
 const app = express();
+// Render (and most PaaS) terminate TLS at a proxy; trust it so req.protocol is
+// "https" and req.get("host") is the public hostname when we build connector URLs.
+app.set("trust proxy", true);
 app.use(express.json({ limit: "4mb" }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -50,6 +53,12 @@ function extractToken(req: Request): string | undefined {
   const auth = req.headers["authorization"];
   if (typeof auth === "string" && /^Bearer\s+/i.test(auth)) {
     return auth.replace(/^Bearer\s+/i, "").trim();
+  }
+  // URL-path token: lets ChatGPT use a per-user connector URL with "No Auth",
+  // since its connector UI offers no API-key / header field.
+  const pathToken = req.params?.token;
+  if (typeof pathToken === "string" && pathToken.trim()) {
+    return pathToken.trim();
   }
   const x = req.headers["x-vtop-token"];
   if (typeof x === "string" && x.trim()) return x.trim();
@@ -92,7 +101,7 @@ function authenticate(
   return {};
 }
 
-app.post(MCP_PATH, async (req: Request, res: Response) => {
+async function handleMcpPost(req: Request, res: Response) {
   const auth = authenticate(req, res);
   if (!auth) return;
 
@@ -126,7 +135,7 @@ app.post(MCP_PATH, async (req: Request, res: Response) => {
   }
 
   await transport.handleRequest(req, res, req.body);
-});
+}
 
 // GET = server-to-client SSE stream; DELETE = explicit session teardown.
 async function handleSessionRequest(req: Request, res: Response) {
@@ -139,13 +148,28 @@ async function handleSessionRequest(req: Request, res: Response) {
   await transports[sessionId].handleRequest(req, res);
 }
 
+// Each method is mounted twice: the bare path (header / single-user clients)
+// and a token-in-path variant (`/mcp/<token>`) for ChatGPT's "No Auth" mode.
+app.post(MCP_PATH, handleMcpPost);
+app.post(`${MCP_PATH}/:token`, handleMcpPost);
 app.get(MCP_PATH, handleSessionRequest);
+app.get(`${MCP_PATH}/:token`, handleSessionRequest);
 app.delete(MCP_PATH, handleSessionRequest);
+app.delete(`${MCP_PATH}/:token`, handleSessionRequest);
 
 // --- Self-service registration (multi-user mode) ---------------------------
 // Each user submits their own VTOP credentials here and receives an opaque
 // token to paste into their ChatGPT connector's API-key / Authorization field.
 // The token is encrypted ciphertext; nothing is stored on the server.
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function registerPage(body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8">
@@ -176,14 +200,14 @@ app.get("/register", (_req: Request, res: Response) => {
     .type("html")
     .send(
       registerPage(
-        `<h1>Get your VTOP connector token</h1>
-<p>Enter your VTOP credentials to generate a personal token. Paste that token into your ChatGPT connector as the API key / Authorization value. Your credentials are encrypted into the token and are <strong>not stored</strong> on this server.</p>
+        `<h1>Get your VTOP connector link</h1>
+<p>Enter your VTOP credentials to generate a personal connector URL. Add that URL in ChatGPT as a custom connector with <strong>Authentication: No Auth</strong>. Your credentials are encrypted into the link and are <strong>not stored</strong> on this server.</p>
 <form method="POST" action="/register">
 <label>VTOP username / registration number<input name="username" autocomplete="off" required></label>
 <label>VTOP password<input name="password" type="password" autocomplete="off" required></label>
-<button type="submit">Generate token</button>
+<button type="submit">Generate link</button>
 </form>
-<p class="warn">Only use this on a deployment you trust — the server operator can technically decrypt tokens.</p>`,
+<p class="warn">Only use this on a deployment you trust — the server operator can technically decrypt the link.</p>`,
       ),
     );
 });
@@ -204,12 +228,15 @@ app.post("/register", (req: Request, res: Response) => {
     return;
   }
   const token = encryptCredentials({ username, password });
+  const connectorUrl = `${req.protocol}://${req.get("host")}${MCP_PATH}/${token}`;
   res.type("html").send(
     registerPage(
-      `<h1>Your connector token</h1>
-<p>Copy this and paste it into your ChatGPT custom connector's API key / Authorization field (it is sent as <code>Authorization: Bearer &lt;token&gt;</code>):</p>
+      `<h1>Your connector link</h1>
+<p><strong>ChatGPT:</strong> add a custom connector, set <strong>Authentication: No Auth</strong>, and paste this as the <em>MCP Server URL</em>:</p>
+<pre>${escapeHtml(connectorUrl)}</pre>
+<p><strong>Claude Desktop / Cursor</strong> (clients that support auth headers) can instead use the base URL <code>${escapeHtml(`${req.protocol}://${req.get("host")}${MCP_PATH}`)}</code> with header <code>Authorization: Bearer &lt;token&gt;</code>, where the token is:</p>
 <pre>${token}</pre>
-<p>Keep it private — anyone with this token can read your VTOP data. To revoke it, ask the operator to rotate <code>CONNECTOR_SECRET</code> (this invalidates all tokens). <a href="/register">Generate another</a>.</p>`,
+<p>Keep this private — anyone with the link can read your VTOP data. To revoke it, ask the operator to rotate <code>CONNECTOR_SECRET</code> (this invalidates all links). <a href="/register">Generate another</a>.</p>`,
     ),
   );
 });
