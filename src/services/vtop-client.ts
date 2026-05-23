@@ -128,6 +128,11 @@ export class VtopClient {
     return setupRes.data;
   }
 
+  /** Diagnostic only: return the raw prelogin HTML that should contain the captcha. */
+  async debugLoginPageHtml(): Promise<string> {
+    return this.initSession();
+  }
+
   /**
    * Fetch the login page and pull the embedded base64 captcha out of it.
    * The Android app does the equivalent of $('#captchaBlock img').src.
