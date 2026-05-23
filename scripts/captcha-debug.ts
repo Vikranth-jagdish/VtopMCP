@@ -34,5 +34,16 @@ console.log("\n--- first 12 <img> srcs ---");
 imgSrcs.slice(0, 12).forEach((s) => console.log("  ", s + (s.length >= 70 ? "…" : "")));
 console.log("\n--- #captchaBlock region (cleaned, 500 chars) ---");
 console.log(block ? clean(block) : "(captchaBlock not found)");
+
+const actions = [...html.matchAll(/action\s*=\s*"([^"]+)"/gi)].map((m) => m[1]);
+const inputs = [...html.matchAll(/<input[^>]*?name\s*=\s*"([^"]+)"/gi)].map((m) => m[1]);
+const loginForm = html.match(/<form[^>]*action="[^"]*login[^"]*"[^>]*>/i)?.[0];
+console.log("\n--- form actions ---");
+console.log(actions.length ? actions.join("\n") : "(none found)");
+console.log("\n--- login <form> tag ---");
+console.log(loginForm ? clean(loginForm) : "(no form whose action contains 'login')");
+console.log("\n--- input field names ---");
+console.log(inputs.length ? [...new Set(inputs)].join(", ") : "(none found)");
+
 console.log("\nFull page saved to captcha-page.html");
 console.log("========================================================\n");
