@@ -25,6 +25,31 @@ const CSRF_RE =
  */
 const MAX_PROBE_SEMESTERS = 3;
 
+/**
+ * When the captcha image isn't found, summarize what VTOP actually returned so
+ * the failure is diagnosable from the client (e.g. a reCAPTCHA variant, a WAF /
+ * region block, or a genuine markup change) without dumping the whole page.
+ */
+function describeLoginPage(html: string): string {
+  const lower = html.toLowerCase();
+  const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim().slice(0, 90);
+  const markers: string[] = [];
+  if (/g-recaptcha|recaptcha\//.test(lower)) markers.push("google-reCAPTCHA");
+  if (/hcaptcha/.test(lower)) markers.push("hCaptcha");
+  if (/cloudflare|cf-ray|attention required|cf-chl/.test(lower)) markers.push("cloudflare/WAF");
+  if (/access denied|forbidden|not authorized|blocked|unusual traffic|region/.test(lower))
+    markers.push("block-text");
+  if (lower.includes("captchablock")) markers.push("captchaBlock");
+  if (lower.includes("captchastr")) markers.push("captchaStr-field");
+  if (/<form[^>]+action="[^"]*login/i.test(lower)) markers.push("login-form");
+  const imgCount = (html.match(/<img/gi) ?? []).length;
+  const hasDataImg = /<img[^>]+src="data:image/i.test(html);
+  return (
+    `[diagnostic] htmlLen=${html.length} title="${title}" imgs=${imgCount} ` +
+    `dataImg=${hasDataImg} markers=[${markers.join(",") || "none"}]`
+  );
+}
+
 export class VtopClient {
   private client: AxiosInstance;
   private baseUrl: string;
@@ -121,7 +146,7 @@ export class VtopClient {
     if (imgMatch) return imgMatch[1];
 
     throw new Error(
-      "Could not find captcha image on login page. The page structure may have changed."
+      `Could not find captcha image on login page. ${describeLoginPage(html)}`,
     );
   }
 
