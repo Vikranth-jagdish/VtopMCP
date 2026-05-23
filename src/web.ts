@@ -126,7 +126,8 @@ input:focus{border-color:var(--ink);box-shadow:0 0 0 4px var(--ring)}
 .btn:active{transform:translateY(1px)}
 .btn svg{width:15px;height:15px}
 .btn.cta{background:var(--accent);border-color:var(--accent);color:var(--paper)}
-.connect-hint{margin-top:12px;color:var(--faint);font-size:13px;line-height:1.55;text-align:center}
+.connect-hint{margin-top:14px;color:var(--soft);font-size:14px;font-weight:600;line-height:1.7;text-align:center}
+.connect-hint .n{color:var(--accent)}
 
 /* steps */
 ol.steps{list-style:none}
@@ -393,7 +394,7 @@ export function resultPage(opts: {
     <button class="copy" data-copy="${safeUrl}">${copyIcon}<span>Copy</span></button>
   </div>
   <a class="btn cta" href="${CHATGPT_CONNECTORS_URL}" target="_blank" rel="noopener" data-connect="${safeUrl}"><span>Connect to ChatGPT</span>${linkOutIcon}</a>
-  <p class="connect-hint">Copies your link and opens ChatGPT's <em>Apps → Developer mode</em> page in a new tab. Then just turn it on, hit Create, and paste — your link is already on the clipboard. (Steps below.)</p>
+  <p class="connect-hint"><span class="n">1.</span> Turn on Developer mode&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">2.</span> Create app&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">3.</span> Paste link</p>
 </section>
 <section id="how" style="padding-top:8px">
   <div class="kicker"><h2 class="serif">How to set it up in ChatGPT</h2><span class="line"></span></div>
