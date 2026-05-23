@@ -210,7 +210,7 @@ function layout(o: LayoutOpts): string {
   const favicon =
     "data:image/svg+xml," +
     encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%231b1a16"/><text x="16" y="23" font-family="Georgia,serif" font-size="20" fill="%23f6f4ee" text-anchor="middle">V</text><circle cx="25" cy="8" r="3.4" fill="%23bf3d24"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1b1a16"/><path d="M16 8.5 27 13.2 16 17.9 5 13.2Z" fill="#f6f4ee"/><path d="M11 15v3.4c0 1.4 10 1.4 10 0V15" fill="none" stroke="#f6f4ee" stroke-width="1.5"/><path d="M27 13.2v6" stroke="#bf3d24" stroke-width="1.5" stroke-linecap="round"/><circle cx="27" cy="20.4" r="1.7" fill="#bf3d24"/></svg>',
     );
   return `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
@@ -377,7 +377,7 @@ export function resultPage(opts: {
     <li><span class="num">01</span><div><h3>Use a paid ChatGPT plan</h3><p>This needs ChatGPT <strong>Go</strong>, <strong>Plus</strong>, or <strong>Pro</strong>. It does not work on the free plan.</p></div></li>
     <li><span class="num">02</span><div><h3>Turn on Developer mode</h3><p>Open ChatGPT and follow this path:</p><div class="navpath"><span>Profile</span><span>Settings</span><span>Apps</span><span>Developer mode = ON</span></div></div></li>
     <li><span class="num">03</span><div><h3>Create the app</h3><p>Click <strong>Create</strong>. Then:</p><p style="margin-top:6px">• <strong>Name:</strong> VtopMCP<br>• <strong>MCP Server URL:</strong> paste the link from the top of this page<br>• <strong>Authentication:</strong> No&nbsp;Auth</p><p style="margin-top:6px">Click Create to save.</p></div></li>
-    <li><span class="num">04</span><div><h3>Ask a question</h3><p>Open a new chat, turn on <strong>VtopMCP</strong>, and ask <em>“what's my attendance?”</em></p></div></li>
+    <li><span class="num">04</span><div><h3>Ask a question</h3><p>Open a new chat and turn on <strong>VtopMCP</strong>. Then tell it to use the tool — for example:</p><p style="margin-top:6px"><em>“Use the VtopMCP tool to get my attendance.”</em></p><p style="margin-top:6px;color:var(--soft);font-size:14px">Tip: mention <strong>VtopMCP</strong> by name. Just asking “what's my attendance?” may not trigger the tool on its own.</p></div></li>
   </ol>
   <details>
     <summary>Using Claude Desktop or Cursor instead?</summary>
@@ -387,7 +387,6 @@ export function resultPage(opts: {
       <button class="copy" data-copy="${escapeHtml(opts.token)}">${copyIcon}<span>Copy</span></button>
     </div>
   </details>
-  <p class="note">Keep this link private — anyone who has it can read your VTOP data. To revoke it, rotate <code class="in">CONNECTOR_SECRET</code> on the server (invalidates all links).</p>
   <a class="backlink" href="/register">${arrowIcon} Generate another link</a>
 </section>`;
   return layout({
