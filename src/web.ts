@@ -270,7 +270,7 @@ function howItWorks(): string {
   <ol class="steps">
     ${step("01", "Enter your VTOP login", "Once, on this page — never inside a chat window.")}
     ${step("02", "Get a private link", "Your credentials are encrypted into a connector URL that's yours alone.")}
-    ${step("03", "Paste it into ChatGPT", "Add it as a connector with <em>No&nbsp;Auth</em>, then ask “what's my attendance?”")}
+    ${step("03", "Add it to ChatGPT", "On a paid plan, turn on <em>Developer mode</em>, create an app with <em>No&nbsp;Auth</em>, then ask “what's my attendance?” — full steps come next.")}
   </ol>
 </section>`;
 }
@@ -347,9 +347,10 @@ export function resultPage(opts: {
 <section id="how" style="padding-top:8px">
   <div class="kicker"><h2 class="serif">Add it to ChatGPT</h2><span class="line"></span></div>
   <ol class="steps">
-    <li><span class="num">01</span><div><h3>Open connector settings</h3><p>ChatGPT → Settings → Connectors → <em>Create</em>.</p></div></li>
-    <li><span class="num">02</span><div><h3>Paste the URL above</h3><p>Use it as the <em>MCP Server URL</em> and set Authentication to <em>No&nbsp;Auth</em>.</p></div></li>
-    <li><span class="num">03</span><div><h3>Ask away</h3><p>Enable the connector in a chat and try <em>“what's my attendance?”</em></p></div></li>
+    <li><span class="num">01</span><div><h3>Use a paid ChatGPT plan</h3><p>Custom connectors need ChatGPT <em>Go</em>, <em>Plus</em>, or <em>Pro</em> — they aren't available on the free tier.</p></div></li>
+    <li><span class="num">02</span><div><h3>Turn on Developer mode</h3><p>In ChatGPT: your <em>profile</em> → <em>Settings</em> → <em>Apps &amp; Connectors</em> → enable <em>Developer mode</em>.</p></div></li>
+    <li><span class="num">03</span><div><h3>Create a new app</h3><p>Click <em>Create</em>, name it <strong>VtopMCP</strong>, paste the URL above as the <em>MCP Server URL</em>, and set Authentication to <em>No&nbsp;Auth</em>.</p></div></li>
+    <li><span class="num">04</span><div><h3>Start asking</h3><p>Enable <strong>VtopMCP</strong> in a chat and try <em>“what's my attendance?”</em></p></div></li>
   </ol>
   <details>
     <summary>Using Claude Desktop or Cursor instead?</summary>
