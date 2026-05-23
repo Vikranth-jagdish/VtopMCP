@@ -1,0 +1,16 @@
+# Render Blueprint — one-click deploy of the VtopMCP ChatGPT connector.
+# In Render: New + > Blueprint, point it at this repo. Render builds the
+# Dockerfile and gives you a public HTTPS URL; the connector endpoint is
+# that URL + /mcp.
+services:
+  - type: web
+    name: vtop-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # Render injects PORT automatically; the server reads it.
+      - key: VTOP_BASE_URL
+        value: https://vtopcc.vit.ac.in/vtop
