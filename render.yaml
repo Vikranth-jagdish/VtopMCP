@@ -14,3 +14,14 @@ services:
       # Render injects PORT automatically; the server reads it.
       - key: VTOP_BASE_URL
         value: https://vtopcc.vit.ac.in/vtop
+      # --- Multi-user mode (optional): set a long random secret to enable
+      # per-user connector links at /register. Leave unset for single-user.
+      # - key: CONNECTOR_SECRET
+      #   generateValue: true
+      # --- Fewer logins (optional): persist encrypted sessions across restarts
+      # so users skip captcha+login after a redeploy / spin-down. Needs
+      # CONNECTOR_SECRET and a Redis URL (e.g. Upstash free tier). See README.
+      # - key: REDIS_URL
+      #   sync: false            # set the value in the Render dashboard (secret)
+      # - key: SESSION_KEEPALIVE_MS
+      #   value: "600000"        # touch VTOP every 10 min (only if kept warm)

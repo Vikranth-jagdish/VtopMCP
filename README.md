@@ -123,6 +123,22 @@ ChatGPT's connector UI only offers OAuth / No Auth (no API-key field), so the to
 
 How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued link (the only way to revoke).
 
+### Fewer logins (optional session persistence)
+
+Logging in is the slow part — VTOP requires a **captcha on every login**, which can't be skipped. The fix is to log in *rarely* by reusing one authenticated VTOP session for as long as possible. The server already reuses a live session in memory (30‑min idle window), but that's lost whenever the process restarts (a redeploy, or a free‑tier **spin‑down after ~15 min idle**), forcing a fresh captcha+login.
+
+Three optional knobs make a single login last much longer:
+
+| Env var | Effect |
+|---|---|
+| `REDIS_URL` | Persist each authenticated session (cookies only, **encrypted** with `CONNECTOR_SECRET`) to Redis. After a restart/spin‑down the server rehydrates it and **skips captcha+login** — as long as VTOP still considers the session valid. Requires `CONNECTOR_SECRET`. Works with any Redis (e.g. Upstash's free tier). |
+| `SESSION_KEEPALIVE_MS` | Periodically touch VTOP for each live session so its server‑side timer doesn't idle out (e.g. `600000` = 10 min). Only useful on an always‑on / kept‑warm host. Off by default. |
+| `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h). |
+
+To actually keep sessions alive between visits, also keep the server **warm**: either use a non‑free Render plan (no spin‑down), or point an uptime monitor at `/` every ~10 min. Persistence alone won't help if the box sleeps *and* VTOP times the cookies out in the meantime.
+
+What's stored is only an **encrypted session cookie** (never the password — that stays in the user's URL token), namespaced and TTL‑bounded. With no `REDIS_URL` set, behaviour is exactly as before: memory‑only, nothing persisted.
+
 ---
 
 ## Available tools (17)

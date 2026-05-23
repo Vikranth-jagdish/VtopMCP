@@ -20,6 +20,18 @@ import { pMap } from "./concurrency.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
 
+/**
+ * A serializable snapshot of an authenticated VTOP session — the cookie jar
+ * (JSESSIONID etc.) plus the auth identity. Persisted (encrypted) so a fresh
+ * process can resume without re-running the captcha+login.
+ */
+export interface VtopSession {
+  /** tough-cookie SerializedCookieJar, or null if the jar was empty. */
+  cookies: unknown;
+  authorizedID: string | null;
+  csrf: string | null;
+}
+
 // An https-proxy agent that also reads/writes the cookie jar at the socket
 // level. axios-cookiejar-support's wrapper() refuses a foreign http(s).Agent,
 // so when proxying we hand cookie handling to this composed agent instead.
@@ -92,10 +104,20 @@ export class VtopClient {
   // or one user's data would leak to another. Node is single-threaded so these
   // fields aren't subject to data races across concurrent requests.
   private client: AxiosInstance;
+  private jar: CookieJar;
   private baseUrl: string;
   private authenticated = false;
   private csrfToken: string | null = null;
   private authorizedID: string | null = null;
+
+  /**
+   * Fired after the session changes in a way worth persisting (successful login,
+   * keepalive touch). Set by the HTTP layer to write the session to the store;
+   * a no-op for stdio / when persistence is disabled. Fire-and-forget.
+   */
+  onSessionPersist?: () => void;
+  /** Fired when the session is gone (logout) and any persisted copy should drop. */
+  onSessionClear?: () => void;
   private cachedActiveSemesterId: string | null = null;
   private cachedGradeHistoryHtml: string | null = null;
   private cachedCalendarSem: string | null = null;
@@ -113,7 +135,23 @@ export class VtopClient {
     applySystemCATrust();
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
 
-    const jar = new CookieJar();
+    const proxyUrl = resolveProxyUrl();
+    if (proxyUrl) {
+      console.error(
+        `VtopMCP: routing VTOP traffic through proxy ${proxyUrl.replace(/\/\/[^@/]+@/, "//***@")}`,
+      );
+    }
+
+    this.jar = new CookieJar();
+    this.client = this.buildClient(this.jar);
+  }
+
+  /**
+   * Build the axios instance bound to a given cookie jar. Extracted so a
+   * restored session (importSession) can swap in a deserialized jar and rebuild
+   * the client around it.
+   */
+  private buildClient(jar: CookieJar): AxiosInstance {
     const config = {
       baseURL: this.baseUrl,
       withCredentials: true,
@@ -134,17 +172,66 @@ export class VtopClient {
       // Proxy path: a single agent both tunnels through the proxy and syncs the
       // cookie jar (so we skip wrapper(), which can't coexist with our agent).
       // proxy:false stops axios's own env-proxy logic from double-tunneling.
-      console.error(
-        `VtopMCP: routing VTOP traffic through proxy ${proxyUrl.replace(/\/\/[^@/]+@/, "//***@")}`,
-      );
-      this.client = axios.create({
+      return axios.create({
         ...config,
         httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar } }),
         proxy: false,
       });
-    } else {
-      // Direct path: axios-cookiejar-support manages cookies via its own agent.
-      this.client = wrapper(axios.create({ ...config, jar }));
+    }
+    // Direct path: axios-cookiejar-support manages cookies via its own agent.
+    return wrapper(axios.create({ ...config, jar }));
+  }
+
+  /**
+   * Serialize the live session (cookies + auth identity) so it can be persisted
+   * and rehydrated in a fresh process. Holds no plaintext credentials — the
+   * caller encrypts the blob before storing.
+   */
+  exportSession(): VtopSession {
+    return {
+      cookies: this.jar.serializeSync() ?? null,
+      authorizedID: this.authorizedID,
+      csrf: this.csrfToken,
+    };
+  }
+
+  /**
+   * Restore a session produced by exportSession. Rebuilds the axios client
+   * around the deserialized jar and marks the client authenticated; the first
+   * authenticated request will transparently fall back to login if VTOP has
+   * since expired the session. Corrupt blobs are ignored (left unauthenticated).
+   */
+  importSession(s: VtopSession): void {
+    try {
+      if (s.cookies) {
+        this.jar = CookieJar.deserializeSync(s.cookies as never);
+        this.client = this.buildClient(this.jar);
+      }
+      this.authorizedID = s.authorizedID;
+      this.csrfToken = s.csrf;
+      this.authenticated = !!s.authorizedID;
+    } catch {
+      this.authenticated = false;
+      this.authorizedID = null;
+    }
+  }
+
+  /**
+   * Touch VTOP with a cheap authenticated request so its server-side session
+   * doesn't idle out, then re-persist (refreshing the store TTL). Returns
+   * whether the session is still alive. Used by the keepalive loop.
+   */
+  async keepAlive(): Promise<boolean> {
+    if (!this.authenticated || !this.authorizedID) return false;
+    try {
+      await this.postWithAuth(ENDPOINTS.profile, {});
+      this.onSessionPersist?.();
+      return true;
+    } catch {
+      // postWithAuth flips authenticated=false when VTOP reports the session
+      // expired; a transient network error leaves it authenticated (we just
+      // skip persisting this round).
+      return this.authenticated;
     }
   }
 
@@ -269,6 +356,7 @@ export class VtopClient {
       const html: string = res.data;
 
       if (this.absorbAuthFromHtml(html)) {
+        this.onSessionPersist?.();
         return { success: true, message: "Successfully logged in to VTOP." };
       }
 
@@ -306,6 +394,7 @@ export class VtopClient {
       try {
         const contentRes = await this.client.get("/content");
         if (this.absorbAuthFromHtml(contentRes.data)) {
+          this.onSessionPersist?.();
           return { success: true, message: "Successfully logged in to VTOP." };
         }
       } catch {
@@ -356,6 +445,7 @@ export class VtopClient {
     this.cachedTimetableHtml.clear();
     this.cachedSemesters = null;
     this.cachedProfileHtml = null;
+    this.onSessionClear?.();
   }
 
   /** Timetable HTML for a semester, cached for the session (it doesn't change). */
