@@ -9,6 +9,14 @@ import {
   encryptCredentials,
   isMultiUserEnabled,
 } from "./services/crypto.js";
+import {
+  landingPage,
+  resultPage,
+  unavailablePage,
+  ogImageSvg,
+  robotsTxt,
+  sitemapXml,
+} from "./web.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const MCP_PATH = process.env.MCP_PATH ?? "/mcp";
@@ -39,14 +47,36 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/", (_req, res) => {
+function originOf(req: Request): string {
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+app.get("/", (req, res) => {
+  // In multi-user mode the root is the landing/registration experience; in
+  // single-user mode it stays a small JSON info endpoint. Both return 200 so
+  // Render's health check (healthCheckPath: /) passes either way.
+  if (isMultiUserEnabled()) {
+    res.type("html").send(landingPage(originOf(req), "/"));
+    return;
+  }
   res.json({
     name: "vtop-mcp",
     transport: "streamable-http",
     endpoint: MCP_PATH,
-    multiUser: isMultiUserEnabled(),
-    register: isMultiUserEnabled() ? "/register" : undefined,
+    multiUser: false,
   });
+});
+
+app.get("/og.svg", (_req, res) => {
+  res.type("image/svg+xml").set("Cache-Control", "public, max-age=86400").send(ogImageSvg());
+});
+
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send(robotsTxt(originOf(req)));
+});
+
+app.get("/sitemap.xml", (req, res) => {
+  res.type("application/xml").send(sitemapXml(originOf(req)));
 });
 
 function extractToken(req: Request): string | undefined {
@@ -158,87 +188,56 @@ app.delete(MCP_PATH, handleSessionRequest);
 app.delete(`${MCP_PATH}/:token`, handleSessionRequest);
 
 // --- Self-service registration (multi-user mode) ---------------------------
-// Each user submits their own VTOP credentials here and receives an opaque
-// token to paste into their ChatGPT connector's API-key / Authorization field.
-// The token is encrypted ciphertext; nothing is stored on the server.
+// Each user submits their own VTOP credentials here and receives a personal
+// connector link with their credentials encrypted into the URL. Nothing is
+// stored on the server.
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function registerPage(body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VTOP connector — get your token</title>
-<style>
-body{font-family:system-ui,sans-serif;max-width:560px;margin:40px auto;padding:0 16px;line-height:1.5}
-input{width:100%;padding:10px;margin:6px 0 14px;box-sizing:border-box;font-size:16px}
-button{padding:10px 18px;font-size:16px;cursor:pointer}
-code,pre{background:#f4f4f4;padding:8px;border-radius:6px;display:block;word-break:break-all;white-space:pre-wrap}
-.warn{color:#a40000}
-</style></head><body>${body}</body></html>`;
-}
-
-app.get("/register", (_req: Request, res: Response) => {
+app.get("/register", (req: Request, res: Response) => {
   if (!isMultiUserEnabled()) {
     res
       .status(503)
       .type("html")
       .send(
-        registerPage(
-          `<h1>Registration unavailable</h1><p>This server is running in single-user mode. Set a <code>CONNECTOR_SECRET</code> environment variable to enable per-user tokens.</p>`,
+        unavailablePage(
+          originOf(req),
+          "This server is running in single-user mode. Set a CONNECTOR_SECRET environment variable to enable per-user connector links.",
         ),
       );
     return;
   }
-  res
-    .type("html")
-    .send(
-      registerPage(
-        `<h1>Get your VTOP connector link</h1>
-<p>Enter your VTOP credentials to generate a personal connector URL. Add that URL in ChatGPT as a custom connector with <strong>Authentication: No Auth</strong>. Your credentials are encrypted into the link and are <strong>not stored</strong> on this server.</p>
-<form method="POST" action="/register">
-<label>VTOP username / registration number<input name="username" autocomplete="off" required></label>
-<label>VTOP password<input name="password" type="password" autocomplete="off" required></label>
-<button type="submit">Generate link</button>
-</form>
-<p class="warn">Only use this on a deployment you trust — the server operator can technically decrypt the link.</p>`,
-      ),
-    );
+  res.type("html").send(landingPage(originOf(req), "/"));
 });
 
 app.post("/register", (req: Request, res: Response) => {
   if (!isMultiUserEnabled()) {
-    res.status(503).type("html").send(
-      registerPage(`<h1>Registration unavailable</h1><p>Set <code>CONNECTOR_SECRET</code> to enable this.</p>`),
-    );
+    res
+      .status(503)
+      .type("html")
+      .send(unavailablePage(originOf(req), "Set CONNECTOR_SECRET to enable registration."));
     return;
   }
   const username = typeof req.body?.username === "string" ? req.body.username.trim() : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!username || !password) {
-    res.status(400).type("html").send(
-      registerPage(`<h1>Missing fields</h1><p>Both username and password are required. <a href="/register">Try again</a>.</p>`),
-    );
+    res
+      .status(400)
+      .type("html")
+      .send(unavailablePage(originOf(req), "Both username and password are required. Go back and try again."));
     return;
   }
   const token = encryptCredentials({ username, password });
-  const connectorUrl = `${req.protocol}://${req.get("host")}${MCP_PATH}/${token}`;
-  res.type("html").send(
-    registerPage(
-      `<h1>Your connector link</h1>
-<p><strong>ChatGPT:</strong> add a custom connector, set <strong>Authentication: No Auth</strong>, and paste this as the <em>MCP Server URL</em>:</p>
-<pre>${escapeHtml(connectorUrl)}</pre>
-<p><strong>Claude Desktop / Cursor</strong> (clients that support auth headers) can instead use the base URL <code>${escapeHtml(`${req.protocol}://${req.get("host")}${MCP_PATH}`)}</code> with header <code>Authorization: Bearer &lt;token&gt;</code>, where the token is:</p>
-<pre>${token}</pre>
-<p>Keep this private — anyone with the link can read your VTOP data. To revoke it, ask the operator to rotate <code>CONNECTOR_SECRET</code> (this invalidates all links). <a href="/register">Generate another</a>.</p>`,
-    ),
-  );
+  const origin = originOf(req);
+  res
+    .set("Cache-Control", "no-store")
+    .type("html")
+    .send(
+      resultPage({
+        origin,
+        connectorUrl: `${origin}${MCP_PATH}/${token}`,
+        baseMcpUrl: `${origin}${MCP_PATH}`,
+        token,
+      }),
+    );
 });
 
 app.listen(PORT, () => {

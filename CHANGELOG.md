@@ -30,6 +30,17 @@ alters VTOP's HTML.
   required. Rotating `CONNECTOR_SECRET` revokes all links. When
   `CONNECTOR_SECRET` is unset the server stays single-user and backward
   compatible (no token required).
+- **Polished registration web page** (`src/web.ts`). The multi-user landing /
+  registration page is now a modern, responsive, server-rendered experience
+  (gradient hero, "How it works" steps, an "Is this safe?" trust section, dark
+  mode, password show/hide, one-click copy of the generated link). In
+  multi-user mode `GET /` serves this landing page. SEO essentials are included:
+  semantic markup, meta description/keywords, canonical URL, Open Graph +
+  Twitter cards, JSON-LD structured data, `/robots.txt`, `/sitemap.xml`, and a
+  generated `/og.svg` social image. The post-submit result page is `noindex` +
+  `no-store` so connector links never leak into caches or search engines. No new
+  dependencies and no client-side framework — kept server-rendered for instant
+  loads and crawlability.
 
 ### Fixed
 - **TLS "unable to verify the first certificate" against VTOP.** Node ignores
