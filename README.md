@@ -71,6 +71,42 @@ claude mcp add vtop -- npx -y @vikranth2005/vtop-mcp
 
 ---
 
+## Use as a ChatGPT connector
+
+The clients above spawn the server locally over **stdio**. ChatGPT can't spawn a local process — it connects to a **remote MCP server over HTTPS**. The package ships a second entrypoint, `vtop-mcp-http`, that serves the exact same 12 tools over the MCP **Streamable HTTP** transport so you can add it as a custom ChatGPT connector.
+
+> ℹ️ **This is a personal, single-user deployment.** The endpoint has no auth (anyone with the URL can reach it), so don't share it. Each MCP session still gets its own isolated login (its own cookie jar), and no data is returned without valid VTOP credentials.
+
+### 1. Deploy it (get a public HTTPS URL)
+
+ChatGPT needs a URL it can reach. Any host that runs the Docker image works. The repo includes a `Dockerfile` and a Render blueprint.
+
+**Render (one-click):** New ➕ → *Blueprint* → point at this repo. Render reads [`render.yaml`](render.yaml), builds the Dockerfile, and gives you `https://<your-app>.onrender.com`. Your connector URL is that **+ `/mcp`**.
+
+**Railway / Fly.io / Cloud Run / any Docker host:**
+```bash
+docker build -t vtop-mcp .
+docker run -p 3000:3000 vtop-mcp        # listens on /mcp
+```
+Then expose it behind HTTPS. The server reads `PORT` (default `3000`) and optional `VTOP_BASE_URL`.
+
+**Run it directly (no Docker):**
+```bash
+npx -y @vikranth2005/vtop-mcp vtop-mcp-http   # or: npm i -g … && vtop-mcp-http
+```
+
+Verify it's up: `GET https://<host>/` returns `{"name":"vtop-mcp","transport":"streamable-http","endpoint":"/mcp"}`.
+
+### 2. Add it in ChatGPT
+
+1. **Settings → Connectors** (Plus/Pro/Business/Enterprise). Enable **Developer mode** if you don't see "Create".
+2. **Create / Add custom connector**, paste your **`https://<host>/mcp`** URL, authentication **None**.
+3. Save. ChatGPT lists the 12 tools. In a chat, enable the connector and ask *"What's my attendance?"* — it'll call `get_captcha` → `login` → `get_attendance`.
+
+> ⚠️ **Captcha caveat.** Login needs a CAPTCHA the model reads from an image. Claude clients OCR the image tool-result natively; whether ChatGPT feeds MCP image results to the model for OCR is **not guaranteed** and may fail or require you to set credentials. If you hit this, the fallback is to bake your own credentials in via `VTOP_USERNAME` / `VTOP_PASSWORD` env vars on the host — but because this endpoint is unauthenticated and single-tenant, **only do that on a deployment that's exclusively yours.**
+
+---
+
 ## Available tools (12)
 
 | Tool | Args | Returns |
@@ -118,7 +154,9 @@ Only VIT Chennai has been verified end-to-end. The other base URLs are provided 
 
 Credentials in the `env` block of `claude_desktop_config.json` are stored in plaintext on disk, in your user's `%APPDATA%`. Only your OS user can read them. They are passed to the spawned `node` child process at startup and never traverse the network except to VTOP itself — they do not go to Anthropic, npm, or anywhere else.
 
-The MCP server is a local stdio process; there's no listening port, no remote endpoint. Session cookies live in memory only and are cleared when Claude Desktop restarts.
+In **stdio mode** (Claude Desktop, Cursor, …) the server is a local process; there's no listening port, no remote endpoint. Session cookies live in memory only and are cleared when the client restarts.
+
+In **HTTP mode** (`vtop-mcp-http`, used for the ChatGPT connector) the server listens on a port and is reachable over the network. It is unauthenticated by design (single-user deployment) — keep the URL private. Each MCP session gets its own in-memory cookie jar, so concurrent sessions never share login state, and credentials still only ever travel to VTOP.
 
 ---
 
@@ -170,7 +208,8 @@ Local `claude_desktop_config.json` for dev: point `command` at `node` and `args`
 
 ```
 src/
-├── index.ts              stdio transport entry
+├── index.ts              stdio transport entry (local clients)
+├── http.ts               Streamable HTTP transport entry (ChatGPT connector)
 ├── server.ts             registers all 12 tools
 ├── services/
 │   ├── vtop-client.ts    HTTP client, cookie jar, login flow, semester probe

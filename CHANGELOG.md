@@ -5,6 +5,18 @@ This project follows [Semantic Versioning](https://semver.org/). While on
 `0.x`, minor/patch bumps may include parser-breaking changes whenever VIT
 alters VTOP's HTML.
 
+## [Unreleased]
+
+### Added
+- **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
+  serves the same 12 tools over the MCP **Streamable HTTP** transport so the
+  server can be deployed remotely and added as a custom ChatGPT connector.
+  Each MCP session gets its own server instance and `VtopClient` (isolated
+  cookie jar), so concurrent remote users never share login state.
+- `Dockerfile`, `.dockerignore`, and a Render blueprint (`render.yaml`) for
+  one-click deployment to a public HTTPS URL.
+- `npm run start:http` script and `express` dependency for the HTTP server.
+
 ## [0.1.5] - 2026-05-19
 
 ### Changed
