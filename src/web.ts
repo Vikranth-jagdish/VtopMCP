@@ -1,11 +1,16 @@
-// Server-rendered HTML for the self-service registration experience. Kept as a
-// dependency-free module (no framework, no build step) so it ships with the
-// same `tsup` pipeline and renders instantly — which is also better for SEO
-// than a client-rendered SPA.
+// Server-rendered HTML for the registration experience. Dependency-free (no
+// framework, no build step) so it ships with the same `tsup` pipeline, renders
+// instantly, and stays fully crawlable for SEO.
+//
+// Design language: editorial / Swiss-influenced. Warm paper, ink type, a
+// characterful serif display face against a clean sans and a mono for technical
+// detail, hairline rules instead of shadows, near-monochrome with a single
+// restrained accent. Light + dark via prefers-color-scheme.
 
 const BRAND = "VTOP Connector";
-const TAGLINE = "Connect your VIT VTOP to ChatGPT — securely, in one click.";
 const REPO_URL = "https://github.com/Vikranth-jagdish/VtopMCP";
+const AUTHOR_URL = "https://www.vikranth.space/labs/vtop-mcp";
+const AUTHOR_NAME = "Vikranth";
 
 export function escapeHtml(s: string): string {
   return s
@@ -16,130 +21,157 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-const ICONS = {
-  shield:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
-  lock:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
-  key:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 9-9"/><path d="m16 6 3 3"/><path d="m18 4 3 3"/></svg>',
-  check:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
-  copy:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
-  bolt:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
-  github:
-    '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 5 18 5.3 18 5.3c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>',
-};
+const checkIcon =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 4.5 6.5 12 2.5 8"/></svg>';
+const copyIcon =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8.5" height="8.5" rx="1.6"/><path d="M3.5 10H2.7A1.2 1.2 0 0 1 1.5 8.8V2.7A1.2 1.2 0 0 1 2.7 1.5h6.1A1.2 1.2 0 0 1 10 2.7v.8"/></svg>';
+const arrowIcon =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg>';
 
 const STYLE = `
 :root{
-  --bg1:#eef2ff; --bg2:#f8fafc; --glow:rgba(79,70,229,.18);
-  --text:#0f172a; --muted:#475569; --card:#ffffff; --card2:#f8fafc;
-  --border:#e5e7eb; --ring:#6366f1;
-  --brand1:#2563eb; --brand2:#6d28d9; --good:#16a34a;
-  --code-bg:#0f172a; --code-fg:#e2e8f0;
+  color-scheme:light dark;
+  --paper:#f6f4ee; --raise:#fbfaf6; --ink:#1b1a16; --soft:#54524a; --faint:#8c897e;
+  --line:#e1ddd1; --line2:#d5d0c2; --code-bg:#efece2; --code-ink:#2a2820;
+  --accent:#bf3d24; --btn-bg:#1b1a16; --btn-ink:#f6f4ee; --ring:rgba(27,26,22,.18);
+  --grain:.04;
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg1:#0b1020; --bg2:#0b1020; --glow:rgba(99,102,241,.22);
-    --text:#e5e7eb; --muted:#94a3b8; --card:#0f172a; --card2:#0b1220;
-    --border:#1f2937; --ring:#818cf8;
-    --brand1:#3b82f6; --brand2:#8b5cf6; --good:#22c55e;
-    --code-bg:#020617; --code-fg:#e2e8f0;
+    --paper:#0c0c0d; --raise:#141416; --ink:#ecebe6; --soft:#a3a097; --faint:#6f6d65;
+    --line:#232326; --line2:#2c2c30; --code-bg:#161618; --code-ink:#e7e6e1;
+    --accent:#ff6a4d; --btn-bg:#ecebe6; --btn-ink:#0c0c0d; --ring:rgba(236,235,230,.16);
+    --grain:.05;
   }
 }
-*{box-sizing:border-box}
+*{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{
-  margin:0;color:var(--text);
+  background:var(--paper);color:var(--ink);
   font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  line-height:1.6;
-  background:
-    radial-gradient(900px 500px at 50% -10%,var(--glow),transparent 60%),
-    linear-gradient(180deg,var(--bg1),var(--bg2));
-  min-height:100vh;
+  font-size:17px;line-height:1.6;letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  min-height:100vh;position:relative;
 }
-a{color:var(--brand1)}
-.wrap{max-width:760px;margin:0 auto;padding:28px 20px 64px}
-header.site{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.02em}
-.brand .mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:#fff;
-  background:linear-gradient(135deg,var(--brand1),var(--brand2));box-shadow:0 6px 18px -6px var(--brand2)}
-.brand .mark svg{width:20px;height:20px}
-.ghlink{display:inline-flex;align-items:center;gap:7px;color:var(--muted);text-decoration:none;font-size:14px;
-  padding:7px 11px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
-.ghlink svg{width:16px;height:16px}
-.ghlink:hover{color:var(--text)}
-.hero{text-align:center;padding:18px 0 8px}
-.pill{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--brand1);
-  background:color-mix(in srgb,var(--brand1) 12%,transparent);border:1px solid color-mix(in srgb,var(--brand1) 22%,transparent);
-  padding:5px 12px;border-radius:999px;margin-bottom:14px}
-.pill svg{width:15px;height:15px}
-h1{font-size:clamp(28px,5vw,40px);line-height:1.15;letter-spacing:-.03em;margin:.1em 0 .25em}
-h1 .grad{background:linear-gradient(120deg,var(--brand1),var(--brand2));-webkit-background-clip:text;background-clip:text;color:transparent}
-.sub{color:var(--muted);font-size:clamp(15px,2.4vw,18px);max-width:52ch;margin:0 auto}
-.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:24px;
-  box-shadow:0 24px 60px -32px rgba(2,6,23,.45);margin-top:22px}
-.card h2{font-size:19px;letter-spacing:-.02em;margin:0 0 6px}
-.card .hint{color:var(--muted);font-size:14px;margin:0 0 18px}
-form label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:var(--grain);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative;z-index:2;max-width:680px;margin:0 auto;padding:0 24px}
+.serif{font-family:"Instrument Serif",Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:0}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.eyebrow{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11.5px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.22em;color:var(--faint)}
+a{color:inherit;text-decoration:none}
+em{font-style:italic}
+
+/* header */
+header.bar{display:flex;align-items:center;justify-content:space-between;padding:26px 0 0}
+.wordmark{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;letter-spacing:-.01em}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.bar nav{display:flex;gap:22px;font-size:13.5px;color:var(--soft)}
+.bar nav a{position:relative;padding-bottom:2px}
+.bar nav a:hover{color:var(--ink)}
+.bar nav a::after{content:"";position:absolute;left:0;right:100%;bottom:0;height:1px;background:var(--ink);transition:right .25s ease}
+.bar nav a:hover::after{right:0}
+
+/* hero */
+.hero{padding:64px 0 8px}
+.hero h1{font-family:"Instrument Serif",Georgia,serif;font-weight:400;
+  font-size:clamp(3rem,9vw,5.4rem);line-height:.96;letter-spacing:-.015em;margin:18px 0 0}
+.hero h1 em{color:var(--accent)}
+.lede{margin-top:22px;max-width:30em;color:var(--soft);font-size:clamp(16px,2.4vw,19px);line-height:1.55}
+
+/* sections */
+section{padding:30px 0}
+.rule{height:1px;background:var(--line);border:0}
+.kicker{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.kicker h2{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:clamp(1.7rem,4vw,2.3rem);letter-spacing:-.01em}
+.kicker .line{flex:1;height:1px;background:var(--line)}
+
+/* form panel */
+.panel{border:1px solid var(--line);border-radius:16px;background:var(--raise);padding:28px}
+.panel .lead{color:var(--soft);font-size:14.5px;margin:-2px 0 22px}
+.label{display:block;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.16em;color:var(--faint);margin:18px 0 8px}
 .field{position:relative}
-input[type=text],input[type=password]{width:100%;padding:13px 14px;font-size:16px;color:var(--text);
-  background:var(--card2);border:1px solid var(--border);border-radius:12px;transition:border .15s,box-shadow .15s;outline:none}
-input::placeholder{color:color-mix(in srgb,var(--muted) 70%,transparent)}
-input:focus{border-color:var(--ring);box-shadow:0 0 0 4px color-mix(in srgb,var(--ring) 22%,transparent)}
-.toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--muted);
-  font-size:13px;font-weight:600;cursor:pointer;padding:6px 8px;border-radius:8px}
-.toggle:hover{color:var(--text);background:var(--card2)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:20px;
-  padding:14px 18px;font-size:16px;font-weight:700;color:#fff;border:0;border-radius:12px;cursor:pointer;
-  background:linear-gradient(135deg,var(--brand1),var(--brand2));box-shadow:0 14px 30px -12px var(--brand2);
-  transition:transform .08s ease,filter .15s ease}
-.btn:hover{filter:brightness(1.06)}
+input[type=text],input[type=password]{width:100%;padding:14px 15px;font-size:16px;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line2);border-radius:11px;outline:none;
+  font-family:inherit;letter-spacing:-.01em;transition:border-color .15s,box-shadow .15s}
+input::placeholder{color:var(--faint)}
+input:focus{border-color:var(--ink);box-shadow:0 0 0 4px var(--ring)}
+.toggle{position:absolute;right:7px;top:50%;transform:translateY(-50%);border:0;background:transparent;cursor:pointer;
+  font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);
+  padding:7px 9px;border-radius:8px}
+.toggle:hover{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:24px;
+  padding:15px 20px;font-size:15px;font-weight:600;letter-spacing:-.01em;cursor:pointer;
+  color:var(--btn-ink);background:var(--btn-bg);border:1px solid var(--btn-bg);border-radius:11px;
+  transition:transform .08s ease,opacity .15s ease}
+.btn:hover{opacity:.9}
 .btn:active{transform:translateY(1px)}
-.btn svg{width:18px;height:18px}
-.steps{display:grid;gap:14px;margin-top:8px}
-@media(min-width:620px){.steps{grid-template-columns:repeat(3,1fr)}}
-.step{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
-.step .n{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;
-  background:linear-gradient(135deg,var(--brand1),var(--brand2));margin-bottom:10px}
-.step h3{margin:0 0 4px;font-size:15px}
-.step p{margin:0;color:var(--muted);font-size:14px}
-.safe{margin-top:22px;border:1px solid color-mix(in srgb,var(--good) 30%,var(--border));
-  background:color-mix(in srgb,var(--good) 7%,var(--card));border-radius:16px;padding:22px}
-.safe .head{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;margin-bottom:6px}
-.safe .head .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;background:var(--good)}
-.safe .head .ic svg{width:18px;height:18px}
-.safe ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:10px}
-.safe li{display:flex;gap:10px;font-size:14.5px;color:var(--text)}
-.safe li svg{width:18px;height:18px;color:var(--good);flex:0 0 auto;margin-top:3px}
-.safe .note{margin:14px 0 0;font-size:13px;color:var(--muted)}
-.codebox{position:relative;margin:10px 0 0}
-pre{margin:0;background:var(--code-bg);color:var(--code-fg);border-radius:12px;padding:16px 52px 16px 16px;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
-.copy{position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;gap:6px;
-  background:rgba(255,255,255,.1);color:#e2e8f0;border:1px solid rgba(255,255,255,.18);border-radius:9px;
-  padding:7px 10px;font-size:13px;font-weight:600;cursor:pointer}
-.copy:hover{background:rgba(255,255,255,.18)}
-.copy.copied{background:var(--good);border-color:var(--good);color:#fff}
-.copy svg{width:15px;height:15px}
-.result-icon{width:60px;height:60px;border-radius:16px;display:grid;place-items:center;color:#fff;margin:0 auto 8px;
-  background:linear-gradient(135deg,var(--good),#15803d);box-shadow:0 16px 34px -14px var(--good)}
-.result-icon svg{width:32px;height:32px}
-ol.flow{padding-left:0;list-style:none;counter-reset:s;margin:6px 0 0}
-ol.flow li{counter-increment:s;position:relative;padding:4px 0 18px 40px}
-ol.flow li::before{content:counter(s);position:absolute;left:0;top:2px;width:26px;height:26px;border-radius:8px;
-  display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--brand1),var(--brand2))}
-details{margin-top:18px;border:1px solid var(--border);border-radius:12px;background:var(--card2);padding:0 16px}
-summary{cursor:pointer;font-weight:600;font-size:14px;padding:14px 0}
-.warn{margin-top:18px;font-size:13.5px;color:var(--muted);border-left:3px solid #f59e0b;padding-left:12px}
-code.inline{background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:13px}
-footer.site{text-align:center;color:var(--muted);font-size:13px;margin-top:30px}
-footer.site a{color:var(--muted)}
-.center{text-align:center}
-.mt{margin-top:18px}
+.btn svg{width:15px;height:15px}
+
+/* steps */
+ol.steps{list-style:none}
+ol.steps li{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:start;
+  padding:22px 0;border-top:1px solid var(--line)}
+ol.steps li:last-child{border-bottom:1px solid var(--line)}
+ol.steps .num{font-family:"Instrument Serif",Georgia,serif;font-size:2rem;line-height:1;color:var(--accent);font-feature-settings:"tnum"}
+ol.steps h3{font-size:16px;font-weight:600;letter-spacing:-.01em;margin-bottom:3px}
+ol.steps p{color:var(--soft);font-size:14.5px;line-height:1.55}
+ol.steps em{font-style:italic}
+
+/* safety */
+.safelist{list-style:none;display:grid;gap:16px}
+.safelist li{display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:start}
+.safelist .ic{width:21px;height:21px;border:1px solid var(--line2);border-radius:7px;display:grid;place-items:center;color:var(--accent);margin-top:2px}
+.safelist .ic svg{width:12px;height:12px}
+.safelist b{font-weight:600}
+.safelist span{color:var(--soft);font-size:15px}
+.safelist span b{color:var(--ink)}
+.note{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:13.5px;line-height:1.6}
+
+/* code / result */
+.codebox{position:relative;margin-top:10px}
+pre{background:var(--code-bg);color:var(--code-ink);border:1px solid var(--line);border-radius:12px;
+  padding:16px 58px 16px 16px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;
+  line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
+.copy{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  background:var(--paper);color:var(--soft);border:1px solid var(--line2);border-radius:8px;
+  padding:7px 10px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  transition:color .15s,border-color .15s}
+.copy:hover{color:var(--ink);border-color:var(--ink)}
+.copy.copied{color:var(--accent);border-color:var(--accent)}
+.copy svg{width:13px;height:13px}
+.ready{display:inline-flex;align-items:center;gap:9px;color:var(--accent);font-family:"JetBrains Mono",monospace;
+  font-size:11.5px;letter-spacing:.22em;text-transform:uppercase}
+details{margin-top:22px;border-top:1px solid var(--line);padding-top:6px}
+summary{cursor:pointer;font-size:14px;color:var(--soft);padding:14px 0;list-style:none}
+summary:hover{color:var(--ink)}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+ ";font-family:"JetBrains Mono",monospace;color:var(--accent)}
+details[open] summary::before{content:"– "}
+code.in{font-family:"JetBrains Mono",monospace;font-size:.86em;background:var(--code-bg);
+  border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+
+.backlink{display:inline-flex;align-items:center;gap:7px;margin-top:28px;font-size:14px;color:var(--soft)}
+.backlink:hover{color:var(--ink)}
+.backlink svg{width:14px;height:14px}
+
+/* footer */
+footer.foot{margin-top:40px;padding:26px 0 56px;border-top:1px solid var(--line);
+  display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;
+  font-size:13px;color:var(--faint)}
+footer.foot a{color:var(--soft)}
+footer.foot a:hover{color:var(--ink)}
+footer.foot .links{display:flex;gap:20px;align-items:center}
+footer.foot .by b{color:var(--ink);font-weight:600}
+
+@media(max-width:560px){
+  .bar nav a:not(.gh){display:none}
+  ol.steps .num{font-size:1.6rem}
+}
 `;
 
 interface LayoutOpts {
@@ -161,12 +193,13 @@ function layout(o: LayoutOpts): string {
     applicationCategory: "EducationalApplication",
     operatingSystem: "Any",
     url: o.origin,
+    author: { "@type": "Person", name: AUTHOR_NAME, url: AUTHOR_URL },
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
   });
   const favicon =
     "data:image/svg+xml," +
     encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="6" fill="#4f46e5"/><path d="M12 4 5 6.6V12c0 4 7 7.4 7 7.4S19 16 19 12V6.6L12 4z" fill="none" stroke="#fff" stroke-width="1.6"/><path d="m9 12 2 2 4-4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="%231b1a16"/><text x="16" y="23" font-family="Georgia,serif" font-size="20" fill="%23f6f4ee" text-anchor="middle">V</text><circle cx="25" cy="8" r="3.4" fill="%23bf3d24"/></svg>',
     );
   return `<!doctype html><html lang="en"><head>
 <meta charset="utf-8">
@@ -174,9 +207,11 @@ function layout(o: LayoutOpts): string {
 <title>${escapeHtml(o.title)}</title>
 <meta name="description" content="${escapeHtml(o.description)}">
 <meta name="keywords" content="VTOP, VIT, ChatGPT, MCP, connector, attendance, timetable, CGPA, VIT Chennai, vtopcc">
+<meta name="author" content="${AUTHOR_NAME}">
 <link rel="canonical" href="${escapeHtml(canonical)}">
 <meta name="robots" content="${o.noindex ? "noindex,nofollow" : "index,follow"}">
-<meta name="theme-color" content="#4f46e5">
+<meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#0c0c0d" media="(prefers-color-scheme:dark)">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${BRAND}">
 <meta property="og:title" content="${escapeHtml(o.title)}">
@@ -190,82 +225,95 @@ function layout(o: LayoutOpts): string {
 <link rel="icon" href="${favicon}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
 <script type="application/ld+json">${jsonLd}</script>
 <style>${STYLE}</style>
 </head><body><div class="wrap">
-<header class="site">
-  <div class="brand"><span class="mark">${ICONS.shield}</span><span>${BRAND}</span></div>
-  <a class="ghlink" href="${REPO_URL}" target="_blank" rel="noopener">${ICONS.github}<span>Open source</span></a>
+<header class="bar">
+  <a class="wordmark" href="/"><span class="dot"></span>VTOP&nbsp;Connector</a>
+  <nav>
+    <a href="#how">How it works</a>
+    <a href="#safe">Safety</a>
+    <a class="gh" href="${REPO_URL}" target="_blank" rel="noopener">GitHub&nbsp;↗</a>
+  </nav>
 </header>
 ${o.body}
-<footer class="site">
-  <p>${BRAND} · open-source MCP server for VIT VTOP · <a href="${REPO_URL}" target="_blank" rel="noopener">GitHub</a></p>
+<footer class="foot">
+  <span class="by">Built by <a href="${AUTHOR_URL}" target="_blank" rel="noopener"><b>${AUTHOR_NAME}</b></a></span>
+  <span class="links">
+    <a href="${AUTHOR_URL}" target="_blank" rel="noopener">Portfolio ↗</a>
+    <a href="${REPO_URL}" target="_blank" rel="noopener">Source ↗</a>
+    <span>MIT</span>
+  </span>
 </footer>
 </div>
 <script>
 document.addEventListener("click",function(e){
   var c=e.target.closest("[data-copy]");
   if(c){navigator.clipboard.writeText(c.getAttribute("data-copy")).then(function(){
-    c.classList.add("copied");var s=c.querySelector("span");var t=s?s.textContent:c.textContent;
-    if(s)s.textContent="Copied!";setTimeout(function(){c.classList.remove("copied");if(s)s.textContent=t;},1800);
+    c.classList.add("copied");var s=c.querySelector("span");var t=s?s.textContent:"";
+    if(s)s.textContent="Copied";setTimeout(function(){c.classList.remove("copied");if(s)s.textContent=t;},1700);
   });}
   var t=e.target.closest("[data-toggle]");
-  if(t){var inp=document.getElementById(t.getAttribute("data-toggle"));
-    if(inp){var p=inp.type==="password";inp.type=p?"text":"password";t.textContent=p?"Hide":"Show";}}
+  if(t){var i=document.getElementById(t.getAttribute("data-toggle"));
+    if(i){var p=i.type==="password";i.type=p?"text":"password";t.textContent=p?"Hide":"Show";}}
 });
 </script>
 </body></html>`;
 }
 
 function howItWorks(): string {
-  return `<div class="steps">
-  <div class="step"><div class="n">1</div><h3>Enter your VTOP login</h3><p>Just once, on this page — never inside the chat.</p></div>
-  <div class="step"><div class="n">2</div><h3>Get a private link</h3><p>We hand you a personal connector URL with your credentials encrypted inside it.</p></div>
-  <div class="step"><div class="n">3</div><h3>Paste it into ChatGPT</h3><p>Add it as a connector with “No Auth”. Then just ask “What’s my attendance?”</p></div>
-</div>`;
+  const step = (n: string, h: string, p: string) =>
+    `<li><span class="num">${n}</span><div><h3>${h}</h3><p>${p}</p></div></li>`;
+  return `<section id="how">
+  <div class="kicker"><h2 class="serif">How it works</h2><span class="line"></span></div>
+  <ol class="steps">
+    ${step("01", "Enter your VTOP login", "Once, on this page — never inside a chat window.")}
+    ${step("02", "Get a private link", "Your credentials are encrypted into a connector URL that's yours alone.")}
+    ${step("03", "Paste it into ChatGPT", "Add it as a connector with <em>No&nbsp;Auth</em>, then ask “what's my attendance?”")}
+  </ol>
+</section>`;
 }
 
-function safetySection(): string {
-  const item = (t: string) => `<li>${ICONS.check}<span>${t}</span></li>`;
-  return `<div class="safe">
-  <div class="head"><span class="ic">${ICONS.lock}</span><span>Is this safe?</span></div>
-  <p style="margin:0;color:var(--muted);font-size:14.5px">Built privacy-first. Here's exactly what happens to your password:</p>
-  <ul>
-    ${item("<strong>Encrypted, not stored.</strong> Your credentials are sealed with AES-256-GCM into the link itself. There is no database — nothing about you is saved on the server.")}
-    ${item("<strong>Never typed into chat.</strong> You log in here, on a normal web page over HTTPS — so your password is never exposed to the AI model.")}
-    ${item("<strong>Only your link works.</strong> The link is yours alone, and you can invalidate it anytime by asking the operator to rotate the server secret.")}
-    ${item("<strong>Open source.</strong> Every line is public — read exactly what the server does before you trust it.")}
+function safety(): string {
+  const li = (b: string, rest: string) =>
+    `<li><span class="ic">${checkIcon}</span><span><b>${b}</b> ${rest}</span></li>`;
+  return `<section id="safe">
+  <div class="kicker"><h2 class="serif">Built to be safe</h2><span class="line"></span></div>
+  <ul class="safelist">
+    ${li("Encrypted, never stored.", "Your credentials are sealed with AES-256-GCM <em>inside the link itself</em>. There's no database — nothing about you is saved on the server.")}
+    ${li("Never typed into chat.", "You sign in here, on a normal page over HTTPS, so your password is never exposed to the AI model.")}
+    ${li("Only your link works.", "The link is yours alone, and it can be invalidated anytime by rotating the server's secret.")}
+    ${li("Fully open source.", "Every line is public — read exactly what runs before you trust it.")}
   </ul>
-  <p class="note">Honest note: like any tool that logs in <em>for</em> you, the person running this server technically holds the key that can decrypt links. Only register on a deployment you trust (ideally your own).</p>
-</div>`;
+  <p class="note">Honest note — like any tool that signs in <em>for</em> you, whoever runs the server holds the key that can decrypt links. Only register on a deployment you trust (ideally your own).</p>
+</section>`;
 }
 
 export function landingPage(origin: string, canonicalPath: string): string {
   const body = `<section class="hero">
-  <span class="pill">${ICONS.bolt} Set up in under a minute</span>
-  <h1>Bring your <span class="grad">VTOP</span> into ChatGPT</h1>
-  <p class="sub">${escapeHtml(TAGLINE)} Ask for your attendance, marks, timetable, exam schedule and CGPA — in plain English.</p>
+  <span class="eyebrow">MCP connector · VIT VTOP</span>
+  <h1>Your VTOP,<br>now in <em>ChatGPT</em>.</h1>
+  <p class="lede">Generate a private connector link and ask for your attendance, marks, timetable, exams and CGPA — in plain English.</p>
 </section>
-<section class="card" aria-labelledby="form-h">
-  <h2 id="form-h">${ICONS.key} Generate your connector link</h2>
-  <p class="hint">Enter your VTOP credentials below. They're encrypted into your personal link and never stored.</p>
-  <form method="POST" action="/register" autocomplete="off">
-    <label for="username">VTOP username / registration number</label>
-    <div class="field"><input id="username" name="username" type="text" placeholder="e.g. 22BCE1234" autocomplete="off" required></div>
-    <label for="password">VTOP password</label>
-    <div class="field">
-      <input id="password" name="password" type="password" placeholder="Your VTOP password" autocomplete="off" required>
-      <button type="button" class="toggle" data-toggle="password">Show</button>
-    </div>
-    <button class="btn" type="submit">${ICONS.bolt} Generate my link</button>
-  </form>
+<section>
+  <div class="panel">
+    <div class="kicker" style="margin-bottom:6px"><h2 class="serif" style="font-size:1.5rem">Create your link</h2></div>
+    <p class="lead">Your VTOP credentials are encrypted into the link and never stored.</p>
+    <form method="POST" action="/register" autocomplete="off">
+      <label class="label" for="username">VTOP username</label>
+      <div class="field"><input id="username" name="username" type="text" placeholder="e.g. 22BCE1234" autocomplete="off" required></div>
+      <label class="label" for="password">VTOP password</label>
+      <div class="field">
+        <input id="password" name="password" type="password" placeholder="••••••••" autocomplete="off" required>
+        <button type="button" class="toggle" data-toggle="password">Show</button>
+      </div>
+      <button class="btn" type="submit">Generate my link ${arrowIcon}</button>
+    </form>
+  </div>
 </section>
-<section class="mt" aria-label="How it works">
-  <h2 class="center" style="letter-spacing:-.02em;margin:26px 0 14px">How it works</h2>
-  ${howItWorks()}
-</section>
-<section>${safetySection()}</section>`;
+${howItWorks()}
+${safety()}`;
   return layout({
     title: `${BRAND} — Connect VIT VTOP to ChatGPT`,
     description:
@@ -284,28 +332,35 @@ export function resultPage(opts: {
 }): string {
   const safeUrl = escapeHtml(opts.connectorUrl);
   const safeBase = escapeHtml(opts.baseMcpUrl);
-  const body = `<section class="hero">
-  <div class="result-icon">${ICONS.check}</div>
-  <h1 style="font-size:clamp(24px,4vw,32px)">Your connector is ready</h1>
-  <p class="sub">Copy your private link and add it to ChatGPT. That's it.</p>
+  const body = `<section class="hero" style="padding-bottom:0">
+  <span class="ready"><span class="dot"></span>Link ready</span>
+  <h1 style="font-size:clamp(2.4rem,7vw,4rem)">Your connector<br>is <em>live</em>.</h1>
+  <p class="lede">Copy your private link and add it to ChatGPT. That's the whole setup.</p>
 </section>
-<section class="card">
-  <ol class="flow">
-    <li><strong>Copy your connector URL</strong>
-      <div class="codebox"><pre>${safeUrl}</pre>
-        <button class="copy" data-copy="${safeUrl}">${ICONS.copy}<span>Copy</span></button></div>
-    </li>
-    <li><strong>In ChatGPT:</strong> Settings → Connectors → <em>Create</em>. Paste the URL above as the <em>MCP Server URL</em> and set <strong>Authentication: No Auth</strong>.</li>
-    <li><strong>Start asking.</strong> Enable the connector in a chat and try <em>“What's my attendance?”</em></li>
+<section>
+  <span class="label" style="margin-top:0">Your connector URL</span>
+  <div class="codebox">
+    <pre>${safeUrl}</pre>
+    <button class="copy" data-copy="${safeUrl}">${copyIcon}<span>Copy</span></button>
+  </div>
+</section>
+<section id="how" style="padding-top:8px">
+  <div class="kicker"><h2 class="serif">Add it to ChatGPT</h2><span class="line"></span></div>
+  <ol class="steps">
+    <li><span class="num">01</span><div><h3>Open connector settings</h3><p>ChatGPT → Settings → Connectors → <em>Create</em>.</p></div></li>
+    <li><span class="num">02</span><div><h3>Paste the URL above</h3><p>Use it as the <em>MCP Server URL</em> and set Authentication to <em>No&nbsp;Auth</em>.</p></div></li>
+    <li><span class="num">03</span><div><h3>Ask away</h3><p>Enable the connector in a chat and try <em>“what's my attendance?”</em></p></div></li>
   </ol>
   <details>
     <summary>Using Claude Desktop or Cursor instead?</summary>
-    <p style="font-size:14px;color:var(--muted)">Those clients support auth headers. Use the base URL <code class="inline">${safeBase}</code> and add header <code class="inline">Authorization: Bearer &lt;token&gt;</code> with this token:</p>
-    <div class="codebox"><pre>${escapeHtml(opts.token)}</pre>
-      <button class="copy" data-copy="${escapeHtml(opts.token)}">${ICONS.copy}<span>Copy</span></button></div>
+    <p style="color:var(--soft);font-size:14px;margin-bottom:4px">Those clients support auth headers. Use the base URL <code class="in">${safeBase}</code> with header <code class="in">Authorization: Bearer &lt;token&gt;</code>, where the token is:</p>
+    <div class="codebox">
+      <pre>${escapeHtml(opts.token)}</pre>
+      <button class="copy" data-copy="${escapeHtml(opts.token)}">${copyIcon}<span>Copy</span></button>
+    </div>
   </details>
-  <p class="warn">Keep this link private — anyone who has it can read your VTOP data. To revoke it, ask the operator to rotate <code class="inline">CONNECTOR_SECRET</code> (this invalidates all links).</p>
-  <p class="center mt"><a href="/register">← Generate another link</a></p>
+  <p class="note">Keep this link private — anyone who has it can read your VTOP data. To revoke it, rotate <code class="in">CONNECTOR_SECRET</code> on the server (invalidates all links).</p>
+  <a class="backlink" href="/register">${arrowIcon} Generate another link</a>
 </section>`;
   return layout({
     title: `Your connector link — ${BRAND}`,
@@ -319,8 +374,9 @@ export function resultPage(opts: {
 
 export function unavailablePage(origin: string, message: string): string {
   const body = `<section class="hero">
-  <h1 style="font-size:clamp(24px,4vw,32px)">Registration unavailable</h1>
-  <p class="sub">${escapeHtml(message)}</p>
+  <span class="eyebrow">Single-user mode</span>
+  <h1 style="font-size:clamp(2.2rem,6vw,3.4rem)">Registration is <em>off</em>.</h1>
+  <p class="lede">${escapeHtml(message)}</p>
 </section>`;
   return layout({
     title: `Unavailable — ${BRAND}`,
@@ -334,18 +390,13 @@ export function unavailablePage(origin: string, message: string): string {
 
 export function ogImageSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs>
-<rect width="1200" height="630" fill="#0b1020"/>
-<circle cx="980" cy="-40" r="320" fill="url(#g)" opacity="0.35"/>
-<g transform="translate(96,210)">
-<rect width="76" height="76" rx="20" fill="url(#g)"/>
-<path d="M38 14 14 22.6V40c0 14.5 24 25.4 24 25.4S62 54.5 62 40V22.6L38 14z" fill="none" stroke="#fff" stroke-width="4"/>
-<path d="m29 40 6 6 12-12" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-<text x="96" y="370" fill="#fff" font-family="Inter,Segoe UI,sans-serif" font-size="68" font-weight="700">VTOP Connector</text>
-<text x="96" y="440" fill="#94a3b8" font-family="Inter,Segoe UI,sans-serif" font-size="34">Connect your VIT VTOP to ChatGPT — securely.</text>
-<text x="96" y="540" fill="#cbd5e1" font-family="Inter,Segoe UI,sans-serif" font-size="26">Attendance · Marks · Timetable · Exams · CGPA</text>
+<rect width="1200" height="630" fill="#f6f4ee"/>
+<rect x="20" y="20" width="1160" height="590" fill="none" stroke="#e1ddd1" stroke-width="2"/>
+<circle cx="96" cy="118" r="9" fill="#bf3d24"/>
+<text x="120" y="125" fill="#54524a" font-family="'JetBrains Mono',monospace" font-size="24" letter-spacing="5">MCP CONNECTOR · VIT VTOP</text>
+<text x="92" y="320" fill="#1b1a16" font-family="Georgia,'Times New Roman',serif" font-size="118">Your VTOP, now</text>
+<text x="92" y="438" fill="#1b1a16" font-family="Georgia,'Times New Roman',serif" font-size="118">in <tspan fill="#bf3d24" font-style="italic">ChatGPT</tspan>.</text>
+<text x="96" y="540" fill="#54524a" font-family="Georgia,serif" font-size="34">Attendance · Marks · Timetable · Exams · CGPA</text>
 </svg>`;
 }
 
