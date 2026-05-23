@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VtopClient } from "../services/vtop-client.js";
 import { parseGradeHistory, parseSemesterGrades } from "../services/vtop-parser.js";
-import { computeGpa, projectCgpa, requiredGpa, type GpaResult } from "../services/gpa-calc.js";
+import { computeGpa, projectCgpa, requiredGpa, cgpaToPercent, type GpaResult } from "../services/gpa-calc.js";
 import { ENDPOINTS } from "../services/constants.js";
 import { GpaCalcSchema } from "../schemas/index.js";
 import { mkJsonTool } from "./_helpers.js";
@@ -23,13 +23,19 @@ export function registerGpaCalcTool(server: McpServer, client: VtopClient) {
       });
 
       const out: {
-        current: { cgpa: number; totalCredits: number; perSemester: typeof perSemester };
+        current: { cgpa: number; percentage: number; totalCredits: number; perSemester: typeof perSemester };
         semesterId?: string;
         computed?: GpaResult;
         projectedCgpa?: number;
+        projectedPercentage?: number;
         requiredGpa?: ReturnType<typeof requiredGpa>;
       } = {
-        current: { cgpa: history.cgpa, totalCredits: history.totalCredits, perSemester },
+        current: {
+          cgpa: history.cgpa,
+          percentage: cgpaToPercent(history.cgpa),
+          totalCredits: history.totalCredits,
+          perSemester,
+        },
       };
 
       let computed: GpaResult | undefined;
@@ -37,6 +43,7 @@ export function registerGpaCalcTool(server: McpServer, client: VtopClient) {
         computed = computeGpa(courses);
         out.computed = computed;
         out.projectedCgpa = projectCgpa(baseCgpa, baseCredits, computed.gpa, computed.totalCredits);
+        out.projectedPercentage = cgpaToPercent(out.projectedCgpa);
       } else if (semesterId) {
         const { grades } = parseSemesterGrades(
           await client.fetchPage(ENDPOINTS.semesterGrades, { semesterSubId: semesterId }),

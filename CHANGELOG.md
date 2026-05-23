@@ -9,9 +9,14 @@ alters VTOP's HTML.
 
 ### Added
 - **`calculate_gpa` tool — GPA / CGPA calculator** (VIT 10-point scale). Reports
-  current CGPA + each completed semester's GPA (computed from grades), computes
-  the GPA of a provided set of grades, projects your CGPA, and works out the GPA
-  needed to reach a target CGPA.
+  current CGPA, percentage (CGPA×10), and each completed semester's GPA (computed
+  from grades), computes the GPA of a provided set of grades, projects your CGPA,
+  and works out the GPA needed to reach a target CGPA.
+- **`predict_grades` tool — CGPA grade predictor.** Estimates this semester's
+  grade for each course from your current internal marks (projecting the
+  not-yet-conducted components, e.g. the FAT), then your SGPA and projected CGPA.
+  Uses the absolute grade scale as a conservative estimate (VIT mostly grades
+  relatively, which usually yields an equal or better grade).
 - **`calculate_od` tool — On-Duty hours calculator.** Totals OD hours per course
   and for the semester from the per-class attendance detail, against VIT's
   40-hour limit (reports total, per-course, and hours remaining).
@@ -35,7 +40,7 @@ alters VTOP's HTML.
   where VTOP's risk score tends to serve the unreadable Google reCAPTCHA instead
   of the OCR-able image captcha — a residential/mobile proxy lowers the score.
 - **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
-  serves the same 16 tools over the MCP **Streamable HTTP** transport so the
+  serves the same 17 tools over the MCP **Streamable HTTP** transport so the
   server can be deployed remotely and added as a custom ChatGPT connector.
   Each MCP session gets its own server instance and `VtopClient` (isolated
   cookie jar), so concurrent remote users never share login state.

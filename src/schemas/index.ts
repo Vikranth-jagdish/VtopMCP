@@ -81,6 +81,18 @@ export const GpaCalcSchema = z.object({
     .describe("Upcoming-semester credits, used with `targetCgpa` (defaults to the credits in `courses`)."),
 });
 
+export const PredictGradesSchema = z.object({
+  semesterId: z.string().optional().describe("Semester ID. Omit for current semester."),
+  assumeRemainingPercent: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional()
+    .describe(
+      "Assumed score (%) on not-yet-conducted components (e.g. the FAT). If omitted, each course assumes you keep your current performance level.",
+    ),
+});
+
 export const OdCalcSchema = z.object({
   semesterId: z
     .string()

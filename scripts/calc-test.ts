@@ -18,7 +18,7 @@ import {
   type WeeklySchedule,
   type CalendarDay,
 } from "../src/services/attendance-calc.js";
-import { computeGpa, projectCgpa, requiredGpa, gradePointOf } from "../src/services/gpa-calc.js";
+import { computeGpa, projectCgpa, requiredGpa, gradePointOf, cgpaToPercent, gradeFromMarks } from "../src/services/gpa-calc.js";
 import type { AttendanceRecord } from "../src/types/index.js";
 
 let passed = 0;
@@ -168,6 +168,19 @@ check("requiredGpa for a target CGPA", () => {
 });
 check("computeGpa empty -> 0", () => {
   assert.equal(computeGpa([]).gpa, 0);
+});
+check("cgpaToPercent = cgpa * 10", () => {
+  assert.equal(cgpaToPercent(8.25), 82.5);
+});
+check("gradeFromMarks absolute boundaries", () => {
+  assert.equal(gradeFromMarks(95), "S");
+  assert.equal(gradeFromMarks(90), "S");
+  assert.equal(gradeFromMarks(89.99), "A");
+  assert.equal(gradeFromMarks(70), "B");
+  assert.equal(gradeFromMarks(66.7), "C");
+  assert.equal(gradeFromMarks(55), "D");
+  assert.equal(gradeFromMarks(50), "E");
+  assert.equal(gradeFromMarks(49), "F");
 });
 
 console.log(`\n${passed} checks passed.`);

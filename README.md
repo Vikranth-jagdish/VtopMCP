@@ -73,7 +73,7 @@ claude mcp add vtop -- npx -y @vikranth2005/vtop-mcp
 
 ## Use as a ChatGPT connector
 
-The clients above spawn the server locally over **stdio**. ChatGPT can't spawn a local process — it connects to a **remote MCP server over HTTPS**. The package ships a second entrypoint, `vtop-mcp-http`, that serves the exact same 16 tools over the MCP **Streamable HTTP** transport so you can add it as a custom ChatGPT connector.
+The clients above spawn the server locally over **stdio**. ChatGPT can't spawn a local process — it connects to a **remote MCP server over HTTPS**. The package ships a second entrypoint, `vtop-mcp-http`, that serves the exact same 17 tools over the MCP **Streamable HTTP** transport so you can add it as a custom ChatGPT connector.
 
 > ℹ️ **This is a personal, single-user deployment.** The endpoint has no auth (anyone with the URL can reach it), so don't share it. Each MCP session still gets its own isolated login (its own cookie jar), and no data is returned without valid VTOP credentials.
 
@@ -101,7 +101,7 @@ Verify it's up: `GET https://<host>/` returns `{"name":"vtop-mcp","transport":"s
 
 1. **Settings → Connectors** (Plus/Pro/Business/Enterprise). Enable **Developer mode** if you don't see "Create".
 2. **Create / Add custom connector**, paste your **`https://<host>/mcp`** URL, authentication **None**.
-3. Save. ChatGPT lists the 16 tools. In a chat, enable the connector and ask *"What's my attendance?"* — it'll call `get_captcha` → `login` → `get_attendance`.
+3. Save. ChatGPT lists the 17 tools. In a chat, enable the connector and ask *"What's my attendance?"* — it'll call `get_captcha` → `login` → `get_attendance`.
 
 > ⚠️ **Captcha caveat.** Login needs a CAPTCHA the model reads from an image. Claude clients OCR the image tool-result natively; whether ChatGPT feeds MCP image results to the model for OCR is **not guaranteed** and may fail or require you to set credentials. If you hit this, the fallback is to bake your own credentials in via `VTOP_USERNAME` / `VTOP_PASSWORD` env vars on the host — but because this endpoint is unauthenticated and single-tenant, **only do that on a deployment that's exclusively yours.**
 
@@ -127,7 +127,7 @@ How it works: the token is the user's credentials **encrypted** (AES-256-GCM) wi
 
 ---
 
-## Available tools (16)
+## Available tools (17)
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -145,7 +145,8 @@ How it works: the token is the user's credentials **encrypted** (AES-256-GCM) wi
 | `get_curriculum_progress` | — | Credits earned vs required, per-category, per-basket, grade-letter counts |
 | `calculate_attendance` | `semesterId?`, `courseCode?`, `targetPercent?`, `untilDate?`, `includeUntilDate?` | Bunk calculator: per-course current %, how many classes you can still skip / must attend to stay safe (default 75%, treating 74.x as safe). With `untilDate` it projects real classes to that deadline using the timetable + academic calendar (holidays, working Saturdays). |
 | `get_today_classes` | `date?` | Today's (or any date's) classes with time + venue, calendar-aware (holidays, working-Saturday day-orders). |
-| `calculate_gpa` | `courses?`, `semesterId?`, `currentCgpa?`, `currentCredits?`, `targetCgpa?`, `plannedCredits?` | GPA/CGPA calculator: current CGPA + per-semester GPA, GPA of a set of grades, projected CGPA, and the GPA needed for a target. |
+| `calculate_gpa` | `courses?`, `semesterId?`, `currentCgpa?`, `currentCredits?`, `targetCgpa?`, `plannedCredits?` | GPA/CGPA calculator (VIT 10-point): current CGPA + percentage (CGPA×10) + per-semester GPA, GPA of a grade set, projected CGPA, and the GPA needed for a target. |
+| `predict_grades` | `semesterId?`, `assumeRemainingPercent?` | Predicts this semester's grades from current marks (estimating the not-yet-conducted components), then your SGPA + projected CGPA. Absolute-scale estimate (VIT relative grading usually gives equal/better). |
 | `calculate_od` | `semesterId?`, `courseCode?` | Totals On-Duty (OD) hours per course and for the semester against VIT's 40-hour limit. |
 
 All per-semester tools auto-pick the current semester if `semesterId` is omitted. The server probes the timetable for the 3 most recent semesters to find one with real course data (skips Summer Term when you're not enrolled).
@@ -236,7 +237,7 @@ Local `claude_desktop_config.json` for dev: point `command` at `node` and `args`
 src/
 ├── index.ts              stdio transport entry (local clients)
 ├── http.ts               Streamable HTTP transport entry (ChatGPT connector)
-├── server.ts             registers all 16 tools
+├── server.ts             registers all 17 tools
 ├── services/
 │   ├── vtop-client.ts    HTTP client, cookie jar, login flow, semester probe
 │   ├── vtop-parser.ts    cheerio HTML → JSON parsers

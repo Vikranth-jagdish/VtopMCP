@@ -13,6 +13,7 @@ import { registerAttendanceCalcTool } from "./tools/attendance-calc.js";
 import { registerTodayClassesTool } from "./tools/today.js";
 import { registerGpaCalcTool } from "./tools/gpa-calc.js";
 import { registerOdCalcTool } from "./tools/od-calc.js";
+import { registerPredictGradesTool } from "./tools/predict-grades.js";
 
 export function createServer(
   credentials?: Credentials,
@@ -46,6 +47,7 @@ export function createServer(
   registerTodayClassesTool(server, client);
   registerGpaCalcTool(server, client);
   registerOdCalcTool(server, client);
+  registerPredictGradesTool(server, client);
 
   return { server, client };
 }

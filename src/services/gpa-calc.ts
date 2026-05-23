@@ -15,6 +15,31 @@ export interface GpaCourse {
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
+/** VIT converts CGPA to percentage by multiplying by 10. */
+export function cgpaToPercent(cgpa: number): number {
+  return round2(cgpa * 10);
+}
+
+/**
+ * Absolute mark→grade cutoffs (lower bound, inclusive): S 90, A 80, B 70,
+ * C 60, D 55, E 50, else F. NOTE: VIT mostly uses RELATIVE grading (theory
+ * classes > 10 students), where cutoffs shift down with the class average — so
+ * this absolute scale is a *conservative* estimate; the real grade is usually
+ * equal or better. Overridable per call.
+ */
+export const DEFAULT_GRADE_CUTOFFS: ReadonlyArray<readonly [number, GradeLetter]> = [
+  [90, "S"], [80, "A"], [70, "B"], [60, "C"], [55, "D"], [50, "E"],
+];
+
+/** Estimate a letter grade from a total mark (out of 100) on the absolute scale. */
+export function gradeFromMarks(
+  total: number,
+  cutoffs: ReadonlyArray<readonly [number, GradeLetter]> = DEFAULT_GRADE_CUTOFFS,
+): GradeLetter {
+  for (const [min, g] of cutoffs) if (total >= min) return g;
+  return "F";
+}
+
 /** Grade point for a letter, or null if it isn't a counted grade (incl. 'N'). */
 export function gradePointOf(grade: string): number | null {
   const g = grade.trim().toUpperCase();
