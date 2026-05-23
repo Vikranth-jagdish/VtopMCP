@@ -393,7 +393,7 @@ export function resultPage(opts: {
     <button class="copy" data-copy="${safeUrl}">${copyIcon}<span>Copy</span></button>
   </div>
   <a class="btn cta" href="${CHATGPT_CONNECTORS_URL}" target="_blank" rel="noopener" data-connect="${safeUrl}"><span>Connect to ChatGPT</span>${linkOutIcon}</a>
-  <p class="connect-hint"><span class="n">1.</span> Turn on Developer mode&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">2.</span> Create app&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">3.</span> Paste link</p>
+  <p class="connect-hint"><span class="n">1.</span> Turn on Developer mode&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">2.</span> Create app&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">3.</span> Paste link&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">4.</span> Select No&nbsp;Auth</p>
 </section>
 <section id="how" style="padding-top:8px">
   <div class="kicker"><h2 class="serif">How to set it up in ChatGPT</h2><span class="line"></span></div>
