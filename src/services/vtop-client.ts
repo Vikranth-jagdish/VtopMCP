@@ -87,6 +87,10 @@ function describeLoginPage(html: string): string {
 }
 
 export class VtopClient {
+  // All session state and caches below are PER-INSTANCE (one VtopClient per
+  // user — see http.ts client-pool). They must never be made static/module-level,
+  // or one user's data would leak to another. Node is single-threaded so these
+  // fields aren't subject to data races across concurrent requests.
   private client: AxiosInstance;
   private baseUrl: string;
   private authenticated = false;

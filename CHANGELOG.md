@@ -94,6 +94,10 @@ alters VTOP's HTML.
 - **Read-only tools now carry `readOnlyHint` annotations**, so MCP clients can
   streamline / auto-approve them (login, logout and get_captcha stay unmarked
   since they change session state).
+- **Multi-user isolation hardened.** All caches are per-`VtopClient` (per connector
+  token) private fields — never module-level — so parallel users never share data.
+  The per-token client pool is now bounded by both idle TTL and a hard LRU cap to
+  keep memory steady under many users.
 
 ### Fixed
 - **`get_marks` returned "not available" even when marks were published.**

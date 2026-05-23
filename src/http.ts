@@ -26,26 +26,40 @@ const MCP_PATH = process.env.MCP_PATH ?? "/mcp";
 // instance, but the underlying VtopClient is shared per user (see below).
 const transports: Record<string, StreamableHTTPServerTransport> = {};
 
-// One VtopClient (cookie jar + login state) per user, keyed by connector token
-// (or a single key in single-user mode). Crucially this is NOT keyed by MCP
-// session: ChatGPT's connector may open a fresh MCP session for each tool call,
-// so get_captcha and login can land on different sessions. The captcha is bound
-// to the prelogin session that produced it, so login must reuse the exact
-// VtopClient get_captcha armed — otherwise VTOP returns a 404 on POST /login.
-// Different tokens stay isolated (one user's session never leaks to another).
+// PER-USER ISOLATION. Each connector token gets its OWN VtopClient — its own
+// cookie jar, login state, and caches (attendance/grades/timetable/calendar all
+// live as private fields on that instance, never module-level). So no user's
+// cached data can ever reach another user; parallel users are fully independent.
+// Keyed by token (not by MCP session) on purpose: ChatGPT's connector may open a
+// fresh MCP session per tool call, so get_captcha and login can land on different
+// sessions — login must reuse the exact VtopClient get_captcha armed, else VTOP
+// 404s. Single-user mode (env creds, no token) has just one shared client.
+//
+// Bounded by both idle TTL and a hard max (LRU) so memory stays in check under
+// many users — Node is single-threaded, so Map access here is race-free.
 const SINGLE_USER_KEY = "__single_user__";
 const CLIENT_TTL_MS = 30 * 60 * 1000; // evict idle clients after 30 min
+const MAX_CLIENTS = 500; // hard cap; evict least-recently-used beyond this
 const clientsByUser = new Map<string, { client: VtopClient; lastUsed: number }>();
 
 function getSharedClient(key: string): VtopClient {
   const now = Date.now();
+  // Idle eviction.
   for (const [k, entry] of clientsByUser) {
     if (now - entry.lastUsed > CLIENT_TTL_MS) clientsByUser.delete(k);
   }
   const existing = clientsByUser.get(key);
   if (existing) {
     existing.lastUsed = now;
+    // Move to most-recently-used end (Map keeps insertion order → O(1) LRU).
+    clientsByUser.delete(key);
+    clientsByUser.set(key, existing);
     return existing.client;
+  }
+  // Hard cap: drop the least-recently-used (the first entry) before inserting.
+  if (clientsByUser.size >= MAX_CLIENTS) {
+    const lru = clientsByUser.keys().next().value;
+    if (lru !== undefined) clientsByUser.delete(lru);
   }
   const client = new VtopClient();
   clientsByUser.set(key, { client, lastUsed: now });
