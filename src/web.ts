@@ -137,6 +137,11 @@ ol.steps em{font-style:italic}
 
 .textlink{color:var(--ink);border-bottom:1px solid var(--accent);padding-bottom:1px;white-space:nowrap}
 .textlink:hover{color:var(--accent)}
+.navpath{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:10px}
+.navpath span{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;background:var(--code-bg);
+  border:1px solid var(--line);border-radius:7px;padding:5px 9px;color:var(--ink)}
+.navpath span:not(:last-child)::after{content:"→";margin-left:8px;color:var(--accent);font-weight:700}
+.navpath span:last-child{border-color:var(--accent);color:var(--accent)}
 
 /* code / result */
 .codebox{position:relative;margin-top:10px}
@@ -367,12 +372,12 @@ export function resultPage(opts: {
   </div>
 </section>
 <section id="how" style="padding-top:8px">
-  <div class="kicker"><h2 class="serif">Add it to ChatGPT</h2><span class="line"></span></div>
+  <div class="kicker"><h2 class="serif">How to set it up in ChatGPT</h2><span class="line"></span></div>
   <ol class="steps">
-    <li><span class="num">01</span><div><h3>Use a paid ChatGPT plan</h3><p>Custom connectors need ChatGPT <em>Go</em>, <em>Plus</em>, or <em>Pro</em> — they aren't available on the free tier.</p></div></li>
-    <li><span class="num">02</span><div><h3>Turn on Developer mode</h3><p>In ChatGPT: your <em>profile</em> → <em>Settings</em> → <em>Apps &amp; Connectors</em> → enable <em>Developer mode</em>.</p></div></li>
-    <li><span class="num">03</span><div><h3>Create a new app</h3><p>Click <em>Create</em>, name it <strong>VtopMCP</strong>, paste the URL above as the <em>MCP Server URL</em>, and set Authentication to <em>No&nbsp;Auth</em>.</p></div></li>
-    <li><span class="num">04</span><div><h3>Start asking</h3><p>Enable <strong>VtopMCP</strong> in a chat and try <em>“what's my attendance?”</em></p></div></li>
+    <li><span class="num">01</span><div><h3>Use a paid ChatGPT plan</h3><p>This needs ChatGPT <strong>Go</strong>, <strong>Plus</strong>, or <strong>Pro</strong>. It does not work on the free plan.</p></div></li>
+    <li><span class="num">02</span><div><h3>Turn on Developer mode</h3><p>Open ChatGPT and follow this path:</p><div class="navpath"><span>Profile</span><span>Settings</span><span>Apps</span><span>Developer mode = ON</span></div></div></li>
+    <li><span class="num">03</span><div><h3>Create the app</h3><p>Click <strong>Create</strong>. Then:</p><p style="margin-top:6px">• <strong>Name:</strong> VtopMCP<br>• <strong>MCP Server URL:</strong> paste the link from the top of this page<br>• <strong>Authentication:</strong> No&nbsp;Auth</p><p style="margin-top:6px">Click Create to save.</p></div></li>
+    <li><span class="num">04</span><div><h3>Ask a question</h3><p>Open a new chat, turn on <strong>VtopMCP</strong>, and ask <em>“what's my attendance?”</em></p></div></li>
   </ol>
   <details>
     <summary>Using Claude Desktop or Cursor instead?</summary>
