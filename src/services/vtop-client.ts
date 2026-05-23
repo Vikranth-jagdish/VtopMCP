@@ -34,7 +34,11 @@ function describeLoginPage(html: string): string {
   const lower = html.toLowerCase();
   const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim().slice(0, 90);
   const markers: string[] = [];
-  if (/g-recaptcha|recaptcha\//.test(lower)) markers.push("google-reCAPTCHA");
+  // A real sitekey means reCAPTCHA is actually rendered; the bare hidden
+  // g-recaptcha-response field is just dormant template markup, present even
+  // when the normal image captcha is shown.
+  if (/data-sitekey="[^"]+"/i.test(html)) markers.push("reCAPTCHA-active");
+  else if (/g-recaptcha-response/i.test(lower)) markers.push("recaptcha-field-dormant");
   if (/hcaptcha/.test(lower)) markers.push("hCaptcha");
   if (/cloudflare|cf-ray|attention required|cf-chl/.test(lower)) markers.push("cloudflare/WAF");
   if (/access denied|forbidden|not authorized|blocked|unusual traffic|region/.test(lower))
@@ -138,20 +142,38 @@ export class VtopClient {
    * The Android app does the equivalent of $('#captchaBlock img').src.
    */
   async getCaptcha(): Promise<string> {
-    const html = await this.initSession();
+    // VTOP intermittently omits the image captcha (and may flip to reCAPTCHA)
+    // after rapid attempts. The image case is usually transient, so retry a few
+    // times; bail early with a clear message if a real reCAPTCHA is active.
+    let lastHtml = "";
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const html = await this.initSession();
+      lastHtml = html;
 
-    const captchaMatch = html.match(
-      /id="captchaBlock"[^>]*>[\s\S]*?<img[^>]+src="(data:image\/[^;]+;base64,[^"]+)"/
-    );
-    if (captchaMatch) return captchaMatch[1];
+      const match =
+        html.match(
+          /id="captchaBlock"[^>]*>[\s\S]*?<img[^>]+src="(data:image\/[^;]+;base64,[^"]+)"/,
+        ) ??
+        html.match(
+          /<img[^>]+src="(data:image\/(?:png|jpeg|jpg);base64,[A-Za-z0-9+/=]+)"/,
+        );
+      if (match) return match[1];
 
-    const imgMatch = html.match(
-      /<img[^>]+src="(data:image\/(?:png|jpeg|jpg);base64,[A-Za-z0-9+/=]+)"/
-    );
-    if (imgMatch) return imgMatch[1];
+      if (/data-sitekey="[^"]+"/i.test(html)) {
+        throw new Error(
+          "VTOP is currently showing a Google reCAPTCHA instead of the image captcha. " +
+            "This usually happens after several rapid login attempts — wait a few " +
+            `minutes and try again. ${describeLoginPage(html)}`,
+        );
+      }
+
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      }
+    }
 
     throw new Error(
-      `Could not find captcha image on login page. ${describeLoginPage(html)}`,
+      `Could not find captcha image on login page. ${describeLoginPage(lastHtml)}`,
     );
   }
 
