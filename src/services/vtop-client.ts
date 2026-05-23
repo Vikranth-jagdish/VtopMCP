@@ -7,6 +7,7 @@ import {
   NOT_AUTH_MSG,
   SESSION_EXPIRED_MSG,
 } from "./constants.js";
+import { applySystemCATrust } from "./tls.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
 
@@ -34,6 +35,7 @@ export class VtopClient {
   private cachedGradeHistoryHtml: string | null = null;
 
   constructor(baseUrl?: string) {
+    applySystemCATrust();
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
 
     const jar = new CookieJar();
