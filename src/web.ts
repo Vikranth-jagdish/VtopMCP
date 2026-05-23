@@ -381,7 +381,6 @@ export function resultPage(opts: {
   token: string;
 }): string {
   const safeUrl = escapeHtml(opts.connectorUrl);
-  const safeBase = escapeHtml(opts.baseMcpUrl);
   const body = `<section class="hero" style="padding-bottom:0">
   <span class="ready"><span class="dot"></span>Link ready</span>
   <h1 style="font-size:clamp(2.4rem,7vw,4rem)">Your connector<br>is <em>live</em>.</h1>
@@ -406,11 +405,8 @@ export function resultPage(opts: {
   </ol>
   <details>
     <summary>Using Claude Desktop or Cursor instead?</summary>
-    <p style="color:var(--soft);font-size:14px;margin-bottom:4px">Those clients support auth headers. Use the base URL <code class="in">${safeBase}</code> with header <code class="in">Authorization: Bearer &lt;token&gt;</code>, where the token is:</p>
-    <div class="codebox">
-      <pre>${escapeHtml(opts.token)}</pre>
-      <button class="copy" data-copy="${escapeHtml(opts.token)}">${copyIcon}<span>Copy</span></button>
-    </div>
+    <p style="color:var(--soft);font-size:14px;margin-bottom:4px">Those run the local package, which logs in for you — no token to copy. Grab the one-click <em>Add to Cursor</em> button and ready-to-paste Claude Desktop config on the project page:</p>
+    <a class="btn" href="${AUTHOR_URL}" target="_blank" rel="noopener"><span>Set up Cursor or Claude Desktop</span>${linkOutIcon}</a>
   </details>
   <a class="backlink" href="/register">${arrowIcon} Generate another link</a>
 </section>`;
