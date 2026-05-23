@@ -18,7 +18,7 @@ import {
   type WeeklySchedule,
   type CalendarDay,
 } from "../src/services/attendance-calc.js";
-import { computeGpa, projectCgpa, requiredGpa, gradePointOf, cgpaToPercent, gradeFromMarks } from "../src/services/gpa-calc.js";
+import { computeGpa, projectCgpa, requiredGpa, gradePointOf, cgpaToPercent, gradeFromMarks, relativeGrade } from "../src/services/gpa-calc.js";
 import type { AttendanceRecord } from "../src/types/index.js";
 
 let passed = 0;
@@ -181,6 +181,24 @@ check("gradeFromMarks absolute boundaries", () => {
   assert.equal(gradeFromMarks(55), "D");
   assert.equal(gradeFromMarks(50), "E");
   assert.equal(gradeFromMarks(49), "F");
+});
+
+check("relativeGrade: VIT mean/sigma bands (mean 60, sigma 10)", () => {
+  assert.equal(relativeGrade(80, 60, 10), "S"); // z=2.0
+  assert.equal(relativeGrade(70, 60, 10), "A"); // z=1.0
+  assert.equal(relativeGrade(60, 60, 10), "B"); // at average
+  assert.equal(relativeGrade(52, 60, 10), "C"); // z=-0.8
+  assert.equal(relativeGrade(44, 60, 10), "D"); // z=-1.6
+});
+check("relativeGrade: pass cutoff = min(50, mean-2σ)", () => {
+  assert.equal(relativeGrade(52, 80, 10), "E"); // z=-2.8 but >=50
+  assert.equal(relativeGrade(49, 80, 10), "F"); // below 50
+  assert.equal(relativeGrade(39, 60, 10), "F"); // below mean-2σ=40
+});
+check("relativeGrade: degenerate sigma=0", () => {
+  assert.equal(relativeGrade(60, 60, 0), "B");
+  assert.equal(relativeGrade(61, 60, 0), "A");
+  assert.equal(relativeGrade(59, 60, 0), "C");
 });
 
 console.log(`\n${passed} checks passed.`);

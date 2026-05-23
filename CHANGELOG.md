@@ -15,8 +15,11 @@ alters VTOP's HTML.
 - **`predict_grades` tool — CGPA grade predictor.** Estimates this semester's
   grade for each course from your current internal marks (projecting the
   not-yet-conducted components, e.g. the FAT), then your SGPA and projected CGPA.
-  Uses the absolute grade scale as a conservative estimate (VIT mostly grades
-  relatively, which usually yields an equal or better grade).
+  Mirrors VIT's actual method: ABSOLUTE grading for lab / soft-skill / project
+  courses, and RELATIVE grading for theory (S≥μ+1.5σ, A≥μ+0.5σ, B≥μ±0.5σ,
+  C≥μ−1.5σ, D≥μ−2.5σ; F below min(50, μ−2σ)). VTOP hides the class average, so
+  theory courses use a class average you supply (`classAverages`, with an
+  optional `sigma`); the tool asks for them when missing.
 - **`calculate_od` tool — On-Duty hours calculator.** Totals OD hours per course
   and for the semester from the per-class attendance detail, against VIT's
   40-hour limit (reports total, per-course, and hours remaining).

@@ -31,7 +31,10 @@ export const DEFAULT_GRADE_CUTOFFS: ReadonlyArray<readonly [number, GradeLetter]
   [90, "S"], [80, "A"], [70, "B"], [60, "C"], [55, "D"], [50, "E"],
 ];
 
-/** Estimate a letter grade from a total mark (out of 100) on the absolute scale. */
+/**
+ * Estimate a letter grade from a total mark (out of 100) on the ABSOLUTE scale.
+ * VIT uses absolute grading for labs, soft-skill, project and small (<=10) classes.
+ */
 export function gradeFromMarks(
   total: number,
   cutoffs: ReadonlyArray<readonly [number, GradeLetter]> = DEFAULT_GRADE_CUTOFFS,
@@ -39,6 +42,28 @@ export function gradeFromMarks(
   for (const [min, g] of cutoffs) if (total >= min) return g;
   return "F";
 }
+
+/**
+ * Estimate a letter grade under VIT's RELATIVE scheme (theory classes > 10),
+ * where the class average is the midpoint of B and grades step by 1σ:
+ *   S >= μ+1.5σ, A >= μ+0.5σ, B >= μ-0.5σ, C >= μ-1.5σ, D >= μ-2.5σ, else E;
+ *   F if mark < min(50, μ-2σ).
+ * `mark`, `mean` are out of 100; `sigma` is the class std-dev (assumed/estimated).
+ */
+export function relativeGrade(mark: number, mean: number, sigma: number): GradeLetter {
+  if (!(sigma > 0)) return mark > mean ? "A" : mark < mean ? "C" : "B";
+  if (mark < Math.min(50, mean - 2 * sigma)) return "F";
+  const z = (mark - mean) / sigma;
+  if (z >= 1.5) return "S";
+  if (z >= 0.5) return "A";
+  if (z >= -0.5) return "B";
+  if (z >= -1.5) return "C";
+  if (z >= -2.5) return "D";
+  return "E";
+}
+
+/** Default assumed class std-dev for relative prediction when none is supplied. */
+export const DEFAULT_SIGMA = 10;
 
 /** Grade point for a letter, or null if it isn't a counted grade (incl. 'N'). */
 export function gradePointOf(grade: string): number | null {

@@ -91,6 +91,22 @@ export const PredictGradesSchema = z.object({
     .describe(
       "Assumed score (%) on not-yet-conducted components (e.g. the FAT). If omitted, each course assumes you keep your current performance level.",
     ),
+  classAverages: z
+    .array(
+      z.object({
+        courseCode: z.string().describe("Course code, e.g. 'BCSE302L'."),
+        average: z.number().describe("Your estimate of the class average FINAL total (out of 100) for this course."),
+        sigma: z.number().optional().describe("Estimated spread (std-dev) of the class; defaults to the global `sigma`."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Your estimate of the class average for each THEORY course — VTOP hides it, so it must come from the user. Lab / soft-skill / project courses use absolute grading and don't need this.",
+    ),
+  sigma: z
+    .number()
+    .optional()
+    .describe("Default class std-dev for relative grading when not given per course (default 10)."),
 });
 
 export const OdCalcSchema = z.object({
