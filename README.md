@@ -123,8 +123,6 @@ ChatGPT's connector UI only offers OAuth / No Auth (no API-key field), so the to
 
 How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued link (the only way to revoke).
 
-> ⚠️ **Trust-the-operator model.** Whoever runs the server holds `CONNECTOR_SECRET` and can technically decrypt links (the server must know each user's password to log into VTOP). Only register on a deployment you trust. Note also that because the token is in the URL, it will appear in the host's HTTP access logs — acceptable for personal/student use, but if you need it kept out of logs, use the header form or wait for OAuth support.
-
 ---
 
 ## Available tools (17)
