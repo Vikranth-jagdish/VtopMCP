@@ -11,6 +11,7 @@ import { registerProfileTool } from "./tools/profile.js";
 import { registerCurriculumTool } from "./tools/curriculum.js";
 import { registerAttendanceCalcTool } from "./tools/attendance-calc.js";
 import { registerTodayClassesTool } from "./tools/today.js";
+import { registerCalendarTool } from "./tools/calendar.js";
 import { registerGpaCalcTool } from "./tools/gpa-calc.js";
 import { registerOdCalcTool } from "./tools/od-calc.js";
 // predict_grades is implemented but kept INACTIVE for now: reliable grade
@@ -48,6 +49,7 @@ export function createServer(
   registerCurriculumTool(server, client);
   registerAttendanceCalcTool(server, client);
   registerTodayClassesTool(server, client);
+  registerCalendarTool(server, client);
   registerGpaCalcTool(server, client);
   registerOdCalcTool(server, client);
   // registerPredictGradesTool(server, client); // inactive — see import note above

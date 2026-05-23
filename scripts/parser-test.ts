@@ -84,6 +84,8 @@ check("parseAcademicCalendar reads instructional + day-order", () => {
   const d13 = days.find((d) => d.date === "2025-12-13")!;
   assert.equal(d13.instructional, true);
   assert.equal(d13.dayOrderWeekday, "THU"); // working Saturday following Thursday
+  assert.match(d13.label ?? "", /Thursday Day Order/i); // event/label captured
+  assert.match(d8.label ?? "", /Working Day/i);
   const d7 = days.find((d) => d.date === "2025-12-07")!;
   assert.equal(d7.instructional, false);
 });

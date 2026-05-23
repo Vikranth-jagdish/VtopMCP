@@ -33,6 +33,10 @@ alters VTOP's HTML.
 - **`get_today_classes` tool.** Today's (or any date's) classes with time and
   venue, calendar-aware — returns a holiday result on non-instructional days and
   follows the correct day-order on working Saturdays.
+- **`get_calendar` tool — academic-calendar lookup.** Find holidays, events
+  (e.g. TechnoVIT), working Saturdays / day-orders, and instructional days.
+  Search a named event with `query`, list a `month`, or get `holidaysOnly`;
+  `parseAcademicCalendar` now also captures each day's event/holiday label.
 - **Academic calendar + timetable-grid parsing.** New `VtopClient.getCalendar`
   (3-step `CalendarPreview` → `getListForSemester` → `processViewCalendar` flow,
   cached per session) and `parseAcademicCalendar` / `parseTimetableGrid` parsers.
@@ -41,7 +45,7 @@ alters VTOP's HTML.
   where VTOP's risk score tends to serve the unreadable Google reCAPTCHA instead
   of the OCR-able image captcha — a residential/mobile proxy lowers the score.
 - **ChatGPT connector support.** New `vtop-mcp-http` entrypoint (`src/http.ts`)
-  serves the same 16 tools over the MCP **Streamable HTTP** transport so the
+  serves the same 17 tools over the MCP **Streamable HTTP** transport so the
   server can be deployed remotely and added as a custom ChatGPT connector.
   Each MCP session gets its own server instance and `VtopClient` (isolated
   cookie jar), so concurrent remote users never share login state.

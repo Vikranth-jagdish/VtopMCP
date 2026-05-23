@@ -511,10 +511,20 @@ export function parseAcademicCalendar(html: string, calDate: string): CalendarDa
     const m = joined.match(/(SUNDAY|MONDAY|TUESDAY|WEDNESDAY|THURSDAY|FRIDAY|SATURDAY)\s+Day Order/i);
     const dayOrderWeekday = m ? DAY_ORDER_NAME[m[1].toUpperCase()] : null;
 
+    // Event/holiday text lives in the parenthesised "detail" spans, repeated per
+    // program (Semester/Flexible/LAW/…) — dedupe to a single label.
+    const details = spans
+      .slice(1)
+      .filter((s) => /^\(/.test(s))
+      .map((s) => s.replace(/^\(|\)$/g, "").trim())
+      .filter(Boolean);
+    const label = [...new Set(details)].join(" / ");
+
     days.push({
       date: `${year}-${pad2(monthNum)}-${pad2(day)}`,
       instructional,
       dayOrderWeekday: instructional ? (dayOrderWeekday ?? null) : null,
+      label,
     });
   });
   return days;

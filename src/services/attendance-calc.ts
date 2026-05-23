@@ -31,6 +31,8 @@ export interface CalendarDay {
   instructional: boolean;
   /** Which weekday's timetable this date follows (e.g. a Saturday running "MON"). */
   dayOrderWeekday: Weekday | null;
+  /** Event / holiday / note text for the day (e.g. "TechnoVIT", "Working Day"). */
+  label?: string;
 }
 
 export interface UpcomingClassDay {

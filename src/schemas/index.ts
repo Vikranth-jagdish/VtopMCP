@@ -120,6 +120,21 @@ export const OdCalcSchema = z.object({
     .describe("Limit to one course code (e.g. 'BCSE302L'). Omit to total OD across all courses."),
 });
 
+export const CalendarSchema = z.object({
+  semesterId: z
+    .string()
+    .optional()
+    .describe(
+      "Semester ID. Omit for current semester. Festivals/holidays appear in the term they fall in (e.g. TechnoVIT is a Fall-term event), so to find a specific event you may need that semester's id — use get_semesters.",
+    ),
+  month: z.string().optional().describe("Restrict to one month as 'YYYY-MM' (e.g. '2026-01')."),
+  query: z
+    .string()
+    .optional()
+    .describe("Case-insensitive search of event/holiday names (e.g. 'technovit', 'pongal')."),
+  holidaysOnly: z.boolean().optional().describe("Return only non-instructional (holiday / no-class) days."),
+});
+
 export const TodayClassesSchema = z.object({
   date: z
     .string()
