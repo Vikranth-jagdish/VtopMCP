@@ -31,8 +31,10 @@ export function mkJsonTool<Shape extends z.ZodRawShape>(
     description,
     schema,
     // Every mkJsonTool tool just reads VTOP data (no writes), so hint clients
-    // (which can use this to streamline / auto-approve) that it's safe & idempotent.
-    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    // (which can use this to streamline / auto-approve) that it's safe,
+    // idempotent, and non-destructive — keeps them off the "destructive write"
+    // path that triggers a permission prompt on every call.
+    { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     async (args: z.infer<z.ZodObject<Shape>>): Promise<ToolResult> => {
       try {
         const out = await handler(args);

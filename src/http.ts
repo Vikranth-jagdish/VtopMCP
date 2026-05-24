@@ -1,15 +1,18 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { createServer } from "./server.js";
-import { VtopClient } from "./services/vtop-client.js";
+import { VtopClient, type VtopSession } from "./services/vtop-client.js";
 import type { Credentials } from "./types/index.js";
 import {
   decryptCredentials,
   encryptCredentials,
+  encryptString,
+  decryptString,
   isMultiUserEnabled,
 } from "./services/crypto.js";
+import { getSessionStore } from "./services/session-store.js";
 import {
   landingPage,
   resultPage,
@@ -38,11 +41,54 @@ const transports: Record<string, StreamableHTTPServerTransport> = {};
 // Bounded by both idle TTL and a hard max (LRU) so memory stays in check under
 // many users — Node is single-threaded, so Map access here is race-free.
 const SINGLE_USER_KEY = "__single_user__";
-const CLIENT_TTL_MS = 30 * 60 * 1000; // evict idle clients after 30 min
+const CLIENT_TTL_MS = 30 * 60 * 1000; // evict idle clients from memory after 30 min
 const MAX_CLIENTS = 500; // hard cap; evict least-recently-used beyond this
 const clientsByUser = new Map<string, { client: VtopClient; lastUsed: number }>();
 
-function getSharedClient(key: string): VtopClient {
+// Optional cross-restart persistence (enabled by REDIS_URL). When set, an
+// authenticated session is also written here (encrypted), so a fresh process
+// after a redeploy / free-tier spin-down can rehydrate it and skip the
+// captcha+login — as long as VTOP still considers the session valid. Without
+// REDIS_URL this is null and behaviour is exactly as before (memory only).
+const sessionStore = getSessionStore();
+// How long a persisted blob lives before it self-expires. Sessions die at
+// VTOP's own idle timeout well before this; the TTL just bounds dead entries.
+const SESSION_PERSIST_TTL_SEC = Number(process.env.SESSION_PERSIST_TTL_SEC ?? 2 * 60 * 60);
+// Optional keepalive: every N ms, touch VTOP for each live session so its
+// server-side timer doesn't idle out (and refresh the persisted copy). Off by
+// default (0); only useful on an always-on / kept-warm host. Suggest ~600000.
+const KEEPALIVE_MS = Number(process.env.SESSION_KEEPALIVE_MS ?? 0);
+
+/** Storage key for a token — hashed so the raw token never lands in the store. */
+function sessionKey(token: string): string {
+  return createHash("sha256").update(token).digest("hex").slice(0, 40);
+}
+
+/**
+ * Wire a client's persistence hooks to the store. Requires CONNECTOR_SECRET
+ * (multi-user mode) since blobs are encrypted with it; no-op otherwise.
+ */
+function attachPersistence(key: string, client: VtopClient): void {
+  if (!sessionStore || !isMultiUserEnabled()) return;
+  const skey = sessionKey(key);
+  client.onSessionPersist = () => {
+    try {
+      const blob = encryptString(JSON.stringify(client.exportSession()));
+      void sessionStore.set(skey, blob, SESSION_PERSIST_TTL_SEC).catch((e) =>
+        console.error("VtopMCP: session persist failed:", e instanceof Error ? e.message : e),
+      );
+    } catch (e) {
+      console.error("VtopMCP: session encrypt failed:", e instanceof Error ? e.message : e);
+    }
+  };
+  client.onSessionClear = () => {
+    void sessionStore.delete(skey).catch((e) =>
+      console.error("VtopMCP: session clear failed:", e instanceof Error ? e.message : e),
+    );
+  };
+}
+
+async function getSharedClient(key: string): Promise<VtopClient> {
   const now = Date.now();
   // Idle eviction.
   for (const [k, entry] of clientsByUser) {
@@ -62,8 +108,39 @@ function getSharedClient(key: string): VtopClient {
     if (lru !== undefined) clientsByUser.delete(lru);
   }
   const client = new VtopClient();
+  attachPersistence(key, client);
+  // Cold miss: try to restore a persisted session so the user skips re-login.
+  if (sessionStore && isMultiUserEnabled()) {
+    try {
+      const blob = await sessionStore.get(sessionKey(key));
+      if (blob) {
+        client.importSession(JSON.parse(decryptString(blob)) as VtopSession);
+        console.error("VtopMCP: restored a persisted session from the store (skipping login if VTOP still accepts it).");
+      }
+    } catch (e) {
+      console.error("VtopMCP: session restore failed:", e instanceof Error ? e.message : e);
+    }
+  }
   clientsByUser.set(key, { client, lastUsed: now });
   return client;
+}
+
+// Keepalive loop (opt-in). Touch each live session; if VTOP has dropped one,
+// evict it from memory so the next request does a clean re-login.
+if (KEEPALIVE_MS > 0) {
+  setInterval(() => {
+    void (async () => {
+      for (const [k, entry] of clientsByUser) {
+        if (!entry.client.isAuthenticated) continue;
+        try {
+          await entry.client.keepAlive();
+        } catch {
+          /* ignore */
+        }
+        if (!entry.client.isAuthenticated) clientsByUser.delete(k);
+      }
+    })();
+  }, KEEPALIVE_MS).unref();
 }
 
 const app = express();
@@ -90,6 +167,13 @@ app.use((req, res, next) => {
 function originOf(req: Request): string {
   return `${req.protocol}://${req.get("host")}`;
 }
+
+// Cheap, always-200 endpoint for uptime pingers / keep-warm cron jobs. Unlike
+// /mcp (which is the MCP protocol endpoint and returns 401/400 to a bare GET),
+// this just confirms the process is up — point your keep-warm cron here.
+app.get("/healthz", (_req, res) => {
+  res.type("text/plain").set("Cache-Control", "no-store").send("ok");
+});
 
 app.get("/", (req, res) => {
   // In multi-user mode the root is the landing/registration experience; in
@@ -195,7 +279,7 @@ async function handleMcpPost(req: Request, res: Response) {
     // Reuse this user's VtopClient across MCP sessions so the prelogin session
     // armed by get_captcha is the same one login submits to. Keyed by token in
     // multi-user mode (per-user isolation) or a single key otherwise.
-    const client = getSharedClient(extractToken(req) ?? SINGLE_USER_KEY);
+    const client = await getSharedClient(extractToken(req) ?? SINGLE_USER_KEY);
 
     // Bind the authenticated user's credentials to this session's server.
     const { server } = createServer(auth.credentials, client);
@@ -289,5 +373,27 @@ app.listen(PORT, () => {
   console.error(`VtopMCP HTTP server listening on :${PORT}${MCP_PATH}`);
   if (isMultiUserEnabled()) {
     console.error(`Multi-user mode ON — users register at :${PORT}/register`);
+  }
+  if (sessionStore && !isMultiUserEnabled()) {
+    console.error(
+      "VtopMCP: REDIS_URL is set but CONNECTOR_SECRET is not — session persistence is disabled (it needs the secret to encrypt blobs).",
+    );
+  }
+  // Verify Redis is actually reachable at startup so a misconfigured REDIS_URL
+  // is obvious immediately (rather than silently failing on the first login).
+  if (sessionStore && isMultiUserEnabled()) {
+    void sessionStore
+      .get("__startup_check__")
+      .then(() => console.error("VtopMCP: Redis session store reachable — persistence active."))
+      .catch((e) =>
+        console.error(
+          "VtopMCP: Redis session store UNREACHABLE:",
+          e instanceof Error ? e.message : e,
+          "— check REDIS_URL. Upstash needs the rediss:// scheme (TLS), e.g. rediss://default:<password>@<host>:6379",
+        ),
+      );
+  }
+  if (KEEPALIVE_MS > 0) {
+    console.error(`VtopMCP: session keepalive ON (every ${Math.round(KEEPALIVE_MS / 1000)}s).`);
   }
 });

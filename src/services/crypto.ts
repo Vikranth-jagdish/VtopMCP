@@ -31,23 +31,21 @@ function getKey(): Buffer {
 }
 
 /**
- * Encrypt VTOP credentials into an opaque, URL-safe token. The token is fully
- * self-contained ciphertext (AES-256-GCM) — nothing is stored server-side, so
- * the deployment needs no database. Only a holder of CONNECTOR_SECRET can
- * decrypt it.
+ * Encrypt an arbitrary string into an opaque, URL-safe token (AES-256-GCM).
+ * Self-contained ciphertext keyed by CONNECTOR_SECRET — used both for the
+ * credential tokens in connector URLs and for persisted session blobs.
  */
-export function encryptCredentials(creds: Credentials): string {
+export function encryptString(plaintext: string): string {
   const key = getKey();
   const iv = crypto.randomBytes(IV_LEN);
   const cipher = crypto.createCipheriv(ALGO, key, iv);
-  const plaintext = Buffer.from(JSON.stringify(creds), "utf8");
-  const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const enc = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, enc]).toString("base64url");
 }
 
-/** Reverse of encryptCredentials. Throws if the token is malformed or forged. */
-export function decryptCredentials(token: string): Credentials {
+/** Reverse of encryptString. Throws if the token is malformed or forged. */
+export function decryptString(token: string): string {
   const key = getKey();
   const raw = Buffer.from(token, "base64url");
   if (raw.length <= IV_LEN + TAG_LEN) {
@@ -58,8 +56,22 @@ export function decryptCredentials(token: string): Credentials {
   const enc = raw.subarray(IV_LEN + TAG_LEN);
   const decipher = crypto.createDecipheriv(ALGO, key, iv);
   decipher.setAuthTag(tag);
-  const dec = Buffer.concat([decipher.update(enc), decipher.final()]);
-  const obj: unknown = JSON.parse(dec.toString("utf8"));
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+}
+
+/**
+ * Encrypt VTOP credentials into an opaque, URL-safe token. The token is fully
+ * self-contained ciphertext (AES-256-GCM) — nothing is stored server-side, so
+ * the deployment needs no database. Only a holder of CONNECTOR_SECRET can
+ * decrypt it.
+ */
+export function encryptCredentials(creds: Credentials): string {
+  return encryptString(JSON.stringify(creds));
+}
+
+/** Reverse of encryptCredentials. Throws if the token is malformed or forged. */
+export function decryptCredentials(token: string): Credentials {
+  const obj: unknown = JSON.parse(decryptString(token));
   if (
     !obj ||
     typeof obj !== "object" ||

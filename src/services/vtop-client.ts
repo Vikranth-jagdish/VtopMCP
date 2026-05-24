@@ -1,5 +1,5 @@
+import https from "node:https";
 import axios, { AxiosInstance } from "axios";
-import { wrapper } from "axios-cookiejar-support";
 import { CookieJar } from "tough-cookie";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { createCookieAgent } from "http-cookie-agent/http";
@@ -9,7 +9,7 @@ import {
   NOT_AUTH_MSG,
   SESSION_EXPIRED_MSG,
 } from "./constants.js";
-import { applySystemCATrust } from "./tls.js";
+import { applySystemCATrust, vtopCaBundle } from "./tls.js";
 import {
   parseCalendarMonths,
   parseAcademicCalendar,
@@ -20,10 +20,26 @@ import { pMap } from "./concurrency.js";
 
 const DEFAULT_BASE_URL = "https://vtopcc.vit.ac.in/vtop";
 
+/**
+ * A serializable snapshot of an authenticated VTOP session — the cookie jar
+ * (JSESSIONID etc.) plus the auth identity. Persisted (encrypted) so a fresh
+ * process can resume without re-running the captcha+login.
+ */
+export interface VtopSession {
+  /** tough-cookie SerializedCookieJar, or null if the jar was empty. */
+  cookies: unknown;
+  authorizedID: string | null;
+  csrf: string | null;
+}
+
 // An https-proxy agent that also reads/writes the cookie jar at the socket
 // level. axios-cookiejar-support's wrapper() refuses a foreign http(s).Agent,
 // so when proxying we hand cookie handling to this composed agent instead.
 const HttpsProxyCookieAgent = createCookieAgent(HttpsProxyAgent);
+// Direct (no-proxy) cookie agent — same socket-level cookie handling as the
+// proxy agent, so we can give it a custom CA bundle (VTOP's missing intermediate)
+// while keeping verification on. Replaces axios-cookiejar-support's wrapper().
+const HttpsCookieAgent = createCookieAgent(https.Agent);
 
 /**
  * Resolve a proxy URL from the environment, or undefined for a direct
@@ -91,11 +107,33 @@ export class VtopClient {
   // user — see http.ts client-pool). They must never be made static/module-level,
   // or one user's data would leak to another. Node is single-threaded so these
   // fields aren't subject to data races across concurrent requests.
-  private client: AxiosInstance;
+  // Two axios instances over ONE shared cookie jar. Strategy: ALWAYS go direct
+  // (fast) and only use the proxy when VTOP serves the unreadable reCAPTCHA on
+  // the login page — i.e. the proxy is a reCAPTCHA fallback for login, never the
+  // default path. Authenticated data requests always go direct (VTOP doesn't
+  // bind the session to the IP — verified empirically), so they stay fast even
+  // when a login had to use the proxy. `proxyClient` is null when no proxy is
+  // configured. `VTOP_PROXY_ALL=1` forces everything through the proxy.
+  private directClient!: AxiosInstance;
+  private proxyClient: AxiosInstance | null = null;
+  /** Which client armed the current prelogin session, so login() submits on the same one. */
+  private armedViaProxy = false;
+  /** VTOP_PROXY_ALL: route data (and login) through the proxy unconditionally. */
+  private readonly proxyAll = /^(1|true|yes|on)$/i.test(process.env.VTOP_PROXY_ALL ?? "");
+  private jar: CookieJar;
   private baseUrl: string;
   private authenticated = false;
   private csrfToken: string | null = null;
   private authorizedID: string | null = null;
+
+  /**
+   * Fired after the session changes in a way worth persisting (successful login,
+   * keepalive touch). Set by the HTTP layer to write the session to the store;
+   * a no-op for stdio / when persistence is disabled. Fire-and-forget.
+   */
+  onSessionPersist?: () => void;
+  /** Fired when the session is gone (logout) and any persisted copy should drop. */
+  onSessionClear?: () => void;
   private cachedActiveSemesterId: string | null = null;
   private cachedGradeHistoryHtml: string | null = null;
   private cachedCalendarSem: string | null = null;
@@ -113,7 +151,43 @@ export class VtopClient {
     applySystemCATrust();
     this.baseUrl = baseUrl ?? process.env.VTOP_BASE_URL ?? DEFAULT_BASE_URL;
 
-    const jar = new CookieJar();
+    const proxyUrl = resolveProxyUrl();
+    if (proxyUrl) {
+      console.error(
+        `VtopMCP: proxy configured (${proxyUrl.replace(/\/\/[^@/]+@/, "//***@")}) — ` +
+          (this.proxyAll
+            ? "VTOP_PROXY_ALL set, routing ALL traffic through it."
+            : "used only as a reCAPTCHA fallback for login; data stays direct."),
+      );
+    }
+
+    this.jar = new CookieJar();
+    this.rebuildClients();
+  }
+
+  /** (Re)build the direct + proxy axios instances around the current cookie jar. */
+  private rebuildClients(): void {
+    const proxyUrl = resolveProxyUrl() ?? null;
+    this.directClient = this.buildClient(this.jar, null);
+    this.proxyClient = proxyUrl ? this.buildClient(this.jar, proxyUrl) : null;
+  }
+
+  /** Client for authenticated data requests: direct, unless VTOP_PROXY_ALL. */
+  private dataClient(): AxiosInstance {
+    return this.proxyAll && this.proxyClient ? this.proxyClient : this.directClient;
+  }
+
+  /** Client that armed the current prelogin session (login must reuse it). */
+  private loginClient(): AxiosInstance {
+    return this.armedViaProxy && this.proxyClient ? this.proxyClient : this.directClient;
+  }
+
+  /**
+   * Build an axios instance bound to a given cookie jar. `proxyUrl` null = a
+   * direct connection; non-null = tunnel through that proxy. Extracted so a
+   * restored session (importSession) can swap in a deserialized jar and rebuild.
+   */
+  private buildClient(jar: CookieJar, proxyUrl: string | null): AxiosInstance {
     const config = {
       baseURL: this.baseUrl,
       withCredentials: true,
@@ -126,25 +200,83 @@ export class VtopClient {
         Referer: this.baseUrl + "/login",
       },
       maxRedirects: 5,
-      timeout: 30_000,
+      // Per-request timeout. The default suits a direct connection; a residential
+      // proxy (VTOP_PROXY_URL) adds latency, so it's bumpable via VTOP_TIMEOUT_MS.
+      timeout: Number(process.env.VTOP_TIMEOUT_MS) || 30_000,
     };
 
-    const proxyUrl = resolveProxyUrl();
+    // Supply VTOP's missing intermediate so the chain verifies (keeps TLS
+    // verification ON; see tls.ts). Scoped to this agent — other connections
+    // (Redis, etc.) are untouched.
+    const ca = vtopCaBundle();
     if (proxyUrl) {
       // Proxy path: a single agent both tunnels through the proxy and syncs the
-      // cookie jar (so we skip wrapper(), which can't coexist with our agent).
-      // proxy:false stops axios's own env-proxy logic from double-tunneling.
-      console.error(
-        `VtopMCP: routing VTOP traffic through proxy ${proxyUrl.replace(/\/\/[^@/]+@/, "//***@")}`,
-      );
-      this.client = axios.create({
+      // cookie jar. proxy:false stops axios's own env-proxy logic from
+      // double-tunneling.
+      return axios.create({
         ...config,
-        httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar } }),
+        httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar }, ca }),
         proxy: false,
       });
-    } else {
-      // Direct path: axios-cookiejar-support manages cookies via its own agent.
-      this.client = wrapper(axios.create({ ...config, jar }));
+    }
+    // Direct path: cookie agent handles the jar at the socket level.
+    return axios.create({
+      ...config,
+      httpsAgent: new HttpsCookieAgent({ cookies: { jar }, ca }),
+      proxy: false,
+    });
+  }
+
+  /**
+   * Serialize the live session (cookies + auth identity) so it can be persisted
+   * and rehydrated in a fresh process. Holds no plaintext credentials — the
+   * caller encrypts the blob before storing.
+   */
+  exportSession(): VtopSession {
+    return {
+      cookies: this.jar.serializeSync() ?? null,
+      authorizedID: this.authorizedID,
+      csrf: this.csrfToken,
+    };
+  }
+
+  /**
+   * Restore a session produced by exportSession. Rebuilds the axios client
+   * around the deserialized jar and marks the client authenticated; the first
+   * authenticated request will transparently fall back to login if VTOP has
+   * since expired the session. Corrupt blobs are ignored (left unauthenticated).
+   */
+  importSession(s: VtopSession): void {
+    try {
+      if (s.cookies) {
+        this.jar = CookieJar.deserializeSync(s.cookies as never);
+        this.rebuildClients();
+      }
+      this.authorizedID = s.authorizedID;
+      this.csrfToken = s.csrf;
+      this.authenticated = !!s.authorizedID;
+    } catch {
+      this.authenticated = false;
+      this.authorizedID = null;
+    }
+  }
+
+  /**
+   * Touch VTOP with a cheap authenticated request so its server-side session
+   * doesn't idle out, then re-persist (refreshing the store TTL). Returns
+   * whether the session is still alive. Used by the keepalive loop.
+   */
+  async keepAlive(): Promise<boolean> {
+    if (!this.authenticated || !this.authorizedID) return false;
+    try {
+      await this.postWithAuth(ENDPOINTS.profile, {});
+      this.onSessionPersist?.();
+      return true;
+    } catch {
+      // postWithAuth flips authenticated=false when VTOP reports the session
+      // expired; a transient network error leaves it authenticated (we just
+      // skip persisting this round).
+      return this.authenticated;
     }
   }
 
@@ -176,17 +308,17 @@ export class VtopClient {
    * cookies, then POST /prelogin/setup?flag=VTOP to receive the student
    * login HTML (which embeds the captcha image).
    */
-  private async initSession(): Promise<string> {
+  private async initSession(client: AxiosInstance): Promise<string> {
     this.authenticated = false;
     this.authorizedID = null;
 
-    const landingRes = await this.client.get("/login");
+    const landingRes = await client.get("/login");
     this.extractCsrf(landingRes.data);
 
     const setupForm = new URLSearchParams();
     setupForm.append("flag", "VTOP");
     if (this.csrfToken) setupForm.append("_csrf", this.csrfToken);
-    const setupRes = await this.client.post("/prelogin/setup", setupForm, {
+    const setupRes = await client.post("/prelogin/setup", setupForm, {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     this.extractCsrf(setupRes.data);
@@ -195,23 +327,23 @@ export class VtopClient {
 
   /** Diagnostic only: return the raw prelogin HTML that should contain the captcha. */
   async debugLoginPageHtml(): Promise<string> {
-    return this.initSession();
+    return this.initSession(this.directClient);
   }
 
   /**
-   * Fetch the login page and pull the embedded base64 captcha out of it.
-   * The Android app does the equivalent of $('#captchaBlock img').src.
+   * Re-roll the prelogin a few times on ONE client, looking for the OCR-able
+   * image captcha (vs the unreadable Google reCAPTCHA VTOP serves on high risk
+   * score). Returns the image if found, plus whether reCAPTCHA was seen.
    */
-  async getCaptcha(): Promise<string> {
-    // VTOP serves one of two login pages by risk score: an OCR-able image
-    // captcha, or a Google reCAPTCHA (which this server can't read). The variant
-    // flips between prelogin rounds, so when reCAPTCHA shows up we re-roll the
-    // session a few times to try to land on the image variant before giving up.
+  private async tryCaptchaOn(
+    client: AxiosInstance,
+    label: string,
+  ): Promise<{ image?: string; sawRecaptcha: boolean; lastHtml: string }> {
     const MAX_ATTEMPTS = 4;
     let lastHtml = "";
     let sawRecaptcha = false;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const html = await this.initSession();
+      const html = await this.initSession(client);
       lastHtml = html;
 
       const match =
@@ -221,27 +353,81 @@ export class VtopClient {
         html.match(
           /<img[^>]+src="(data:image\/(?:png|jpeg|jpg);base64,[A-Za-z0-9+/=]+)"/,
         );
-      if (match) return match[1];
+      if (match) {
+        console.error(`VtopMCP: captcha image served via ${label} (attempt ${attempt}/${MAX_ATTEMPTS}).`);
+        return { image: match[1], sawRecaptcha, lastHtml };
+      }
 
-      if (/data-sitekey="[^"]+"/i.test(html)) sawRecaptcha = true;
+      if (/data-sitekey="[^"]+"/i.test(html)) {
+        sawRecaptcha = true;
+        console.error(
+          `VtopMCP: ${label} login page served Google reCAPTCHA (attempt ${attempt}/${MAX_ATTEMPTS}).`,
+        );
+      } else {
+        console.error(
+          `VtopMCP: ${label} — no captcha image found (attempt ${attempt}/${MAX_ATTEMPTS}). ${describeLoginPage(html)}`,
+        );
+      }
 
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
       }
     }
+    return { sawRecaptcha, lastHtml };
+  }
 
-    if (sawRecaptcha) {
-      throw new Error(
-        "VTOP kept serving a Google reCAPTCHA instead of the image captcha across " +
-          `${MAX_ATTEMPTS} attempts, so no readable captcha could be obtained. VTOP shows ` +
-          "reCAPTCHA when its risk score is high — typically from a datacenter/cloud IP " +
-          "(e.g. the hosting provider) or many recent login attempts. Wait a few minutes " +
-          `and try again. ${describeLoginPage(lastHtml)}`,
+  /**
+   * Fetch the login page and pull out the base64 captcha image.
+   *
+   * Strategy: try DIRECT first (fast). Only if VTOP serves the unreadable
+   * reCAPTCHA do we fall back to the residential proxy (which lowers the risk
+   * score so the image variant is served). This keeps the common case fast and
+   * uses the slow proxy strictly as a reCAPTCHA fallback. `armedViaProxy`
+   * records which path armed the prelogin session so login() submits on it.
+   * VTOP_PROXY_ALL skips the direct attempt.
+   */
+  async getCaptcha(): Promise<string> {
+    if (!(this.proxyAll && this.proxyClient)) {
+      const direct = await this.tryCaptchaOn(this.directClient, "direct");
+      if (direct.image) {
+        this.armedViaProxy = false;
+        return direct.image;
+      }
+      if (!this.proxyClient) {
+        if (direct.sawRecaptcha) {
+          throw new Error(
+            "VTOP served a Google reCAPTCHA (unreadable) on every attempt and no proxy is " +
+              "configured to fall back to. Set VTOP_PROXY_URL to a residential proxy so VTOP " +
+              `serves the image captcha instead. ${describeLoginPage(direct.lastHtml)}`,
+          );
+        }
+        throw new Error(
+          `Could not find a captcha image on the login page. ${describeLoginPage(direct.lastHtml)}`,
+        );
+      }
+      console.error(
+        "VtopMCP: direct login kept hitting reCAPTCHA — falling back to the proxy for this login (slower).",
       );
     }
 
+    const viaProxy = await this.tryCaptchaOn(this.proxyClient!, "proxy");
+    if (viaProxy.image) {
+      this.armedViaProxy = true;
+      return viaProxy.image;
+    }
+    this.armedViaProxy = false;
+    if (viaProxy.sawRecaptcha) {
+      console.error(
+        "VtopMCP: reCAPTCHA served even through the proxy — the proxy IP may be flagged; retry shortly or rotate the proxy session.",
+      );
+      throw new Error(
+        "VTOP kept serving a Google reCAPTCHA instead of the image captcha, even through the " +
+          "proxy, so no readable captcha could be obtained. The proxy exit IP may itself be " +
+          `flagged — wait a few minutes or rotate the proxy session. ${describeLoginPage(viaProxy.lastHtml)}`,
+      );
+    }
     throw new Error(
-      `Could not find captcha image on login page. ${describeLoginPage(lastHtml)}`,
+      `Could not find a captcha image on the login page (via proxy). ${describeLoginPage(viaProxy.lastHtml)}`,
     );
   }
 
@@ -262,18 +448,24 @@ export class VtopClient {
     formData.append("gResponse", captcha);
     if (this.csrfToken) formData.append("_csrf", this.csrfToken);
 
+    // Submit on the same client that armed the prelogin session (direct, or the
+    // proxy if getCaptcha fell back to it).
+    const loginClient = this.loginClient();
     try {
-      const res = await this.client.post("/login", formData, {
+      const res = await loginClient.post("/login", formData, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
       const html: string = res.data;
 
       if (this.absorbAuthFromHtml(html)) {
+        this.onSessionPersist?.();
+        console.error("VtopMCP: login OK.");
         return { success: true, message: "Successfully logged in to VTOP." };
       }
 
       const lower = html.toLowerCase();
       if (/invalid\s*captcha/.test(lower)) {
+        console.error("VtopMCP: login failed — VTOP reported invalid captcha (OCR misread or expired).");
         return {
           success: false,
           message:
@@ -285,15 +477,18 @@ export class VtopClient {
           lower
         )
       ) {
+        console.error("VtopMCP: login failed — invalid username/password.");
         return { success: false, message: "Invalid username or password." };
       }
       if (/account\s*is\s*locked/.test(lower)) {
+        console.error("VtopMCP: login failed — account locked.");
         return {
           success: false,
           message: "Account is locked. Please contact VIT administration.",
         };
       }
       if (/maximum\s*fail\s*attempts\s*reached/.test(lower)) {
+        console.error("VtopMCP: login failed — maximum fail attempts reached.");
         return {
           success: false,
           message:
@@ -304,8 +499,10 @@ export class VtopClient {
       // Some VTOP deployments redirect post-login through /content rather
       // than returning the home page inline; try that as a fallback.
       try {
-        const contentRes = await this.client.get("/content");
+        const contentRes = await loginClient.get("/content");
         if (this.absorbAuthFromHtml(contentRes.data)) {
+          this.onSessionPersist?.();
+          console.error("VtopMCP: login OK (via /content fallback).");
           return { success: true, message: "Successfully logged in to VTOP." };
         }
       } catch {
@@ -313,6 +510,9 @@ export class VtopClient {
       }
 
       this.authenticated = false;
+      console.error(
+        `VtopMCP: login failed — unrecognized response (htmlLen=${html.length}). ${describeLoginPage(html)}`,
+      );
       return {
         success: false,
         message:
@@ -326,6 +526,7 @@ export class VtopClient {
       // session than the one we're posting from. The captcha can't be replayed
       // on a fresh session, so the only recovery is a brand-new captcha.
       if (status === 404 || /status code 404/.test(String(err))) {
+        console.error("VtopMCP: login failed — VTOP 404 (prelogin session not armed on this client).");
         return {
           success: false,
           message:
@@ -335,13 +536,14 @@ export class VtopClient {
         };
       }
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`VtopMCP: login request error${status ? ` (status ${status})` : ""}: ${msg}`);
       return { success: false, message: `Login request failed: ${msg}` };
     }
   }
 
   async logout(): Promise<void> {
     try {
-      await this.client.get("/processLogout");
+      await this.dataClient().get("/processLogout");
     } catch {
       /* ignore */
     }
@@ -356,6 +558,7 @@ export class VtopClient {
     this.cachedTimetableHtml.clear();
     this.cachedSemesters = null;
     this.cachedProfileHtml = null;
+    this.onSessionClear?.();
   }
 
   /** Timetable HTML for a semester, cached for the session (it doesn't change). */
@@ -541,7 +744,8 @@ export class VtopClient {
     }
 
     try {
-      const res = await this.client.post(endpoint, formData, {
+      // Authenticated data goes direct (fast) — see dataClient().
+      const res = await this.dataClient().post(endpoint, formData, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
       const html: string = res.data;
@@ -564,6 +768,7 @@ export class VtopClient {
       ) {
         this.authenticated = false;
         this.authorizedID = null;
+        console.error(`VtopMCP: VTOP session expired/unauthorized during ${endpoint}.`);
         throw new Error(SESSION_EXPIRED_MSG);
       }
 

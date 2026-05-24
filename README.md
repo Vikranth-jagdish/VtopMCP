@@ -123,6 +123,22 @@ ChatGPT's connector UI only offers OAuth / No Auth (no API-key field), so the to
 
 How it works: the token is the user's credentials **encrypted** (AES-256-GCM) with `CONNECTOR_SECRET`. Nothing is stored server-side — no database needed. The server decrypts the token per request and logs that user into VTOP. Rotating `CONNECTOR_SECRET` invalidates every issued link (the only way to revoke).
 
+### Fewer logins (optional session persistence)
+
+Logging in is the slow part — VTOP requires a **captcha on every login**, which can't be skipped. The fix is to log in *rarely* by reusing one authenticated VTOP session for as long as possible. The server already reuses a live session in memory (30‑min idle window), but that's lost whenever the process restarts (a redeploy, or a free‑tier **spin‑down after ~15 min idle**), forcing a fresh captcha+login.
+
+Three optional knobs make a single login last much longer:
+
+| Env var | Effect |
+|---|---|
+| `REDIS_URL` | Persist each authenticated session (cookies only, **encrypted** with `CONNECTOR_SECRET`) to Redis. After a restart/spin‑down the server rehydrates it and **skips captcha+login** — as long as VTOP still considers the session valid. Requires `CONNECTOR_SECRET`. Works with any Redis (e.g. Upstash's free tier). **For a TLS endpoint (Upstash etc.) use the `rediss://` scheme** (double‑s), e.g. `rediss://default:<password>@<host>:6379` — `redis://` won't enable TLS and the connection will fail. The server logs whether Redis is reachable at startup. |
+| `SESSION_KEEPALIVE_MS` | Periodically touch VTOP for each live session so its server‑side timer doesn't idle out (e.g. `600000` = 10 min). Only useful on an always‑on / kept‑warm host. Off by default. |
+| `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h). |
+
+To actually keep sessions alive between visits, also keep the server **warm**: either use a non‑free Render plan (no spin‑down), or point an uptime monitor / cron at **`/healthz`** (a cheap always‑200 endpoint) every ~10 min. Don't point it at `/mcp` — that's the protocol endpoint and returns 401/400 to a bare GET, so a cron will mark itself failed. Persistence alone won't help if the box sleeps *and* VTOP times the cookies out in the meantime.
+
+What's stored is only an **encrypted session cookie** (never the password — that stays in the user's URL token), namespaced and TTL‑bounded. With no `REDIS_URL` set, behaviour is exactly as before: memory‑only, nothing persisted.
+
 ---
 
 ## Available tools (17)
@@ -159,8 +175,10 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `VTOP_PASSWORD` | Optional | — | Auto-login password. **If unset, the assistant asks you for it in the chat.** Never stored on disk when entered this way. |
 | `CONNECTOR_SECRET` | Optional | — | Set a long random string to enable **multi-user mode** on the HTTP connector: users self-register at `/register` and get an encrypted token. See [Multi-user mode](#multi-user-mode-one-connector-many-users). Leave unset for single-user mode. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
-| `VTOP_PROXY_URL` | Optional | — | Route VTOP traffic through an HTTP(S) proxy, e.g. `http://user:pass@host:port`. Use a **residential/mobile** proxy when hosting on a datacenter/cloud IP: VTOP raises its risk score for such IPs and serves a Google reCAPTCHA (which this server can't read) instead of the OCR-able image captcha. Falls back to the standard `HTTPS_PROXY` if unset. |
-| `VTOP_INSECURE_TLS` | Optional | — | Set to `1` only if you still hit `unable to verify the first certificate` (a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide — use only on a trusted network.** |
+| `VTOP_PROXY_URL` | Optional | — | A **residential/mobile** HTTP(S) proxy, e.g. `http://user:pass@host:port`, used **only as a reCAPTCHA fallback for login**. On a datacenter/cloud IP, VTOP raises its risk score and serves an unreadable Google reCAPTCHA instead of the OCR-able image captcha; routing the *login* through a residential IP lowers the score. The server tries **direct first** (fast) and falls back to this proxy only when direct keeps hitting reCAPTCHA. **Authenticated data requests always go direct**, so they stay fast (VTOP doesn't bind sessions to the IP). Falls back to `HTTPS_PROXY` if unset. SOCKS not supported. |
+| `VTOP_PROXY_ALL` | Optional | — | Set to `1` to force **all** VTOP traffic (login *and* data) through `VTOP_PROXY_URL`, skipping the direct-first attempt. Slower; only needed if direct requests are blocked entirely. |
+| `VTOP_TIMEOUT_MS` | Optional | `30000` | Per-request HTTP timeout (ms). Bump it (e.g. `60000`) if you use a slow residential proxy and see timeouts on login. |
+| `VTOP_INSECURE_TLS` | Optional | — | Almost never needed — VTOP omits an intermediate cert, but the server now bundles it and verifies VTOP normally. Set to `1` only as a last resort if you still hit `unable to verify the first certificate` (e.g. a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide (including Redis) — use only on a trusted network.** |
 
 ### Campuses
 
@@ -206,7 +224,7 @@ npm i -g @vikranth2005/vtop-mcp
 
 (`npm i -g` installs a `vtop-mcp` command shim on your PATH; Claude Desktop runs it directly, no npx involved.) macOS/Linux/WSL users can use the `npx -y @vikranth2005/vtop-mcp` form from Quick start without issue.
 
-**`unable to verify the first certificate`** — the server now merges your OS trust store into Node's CA list automatically at startup (Node ≥ 22.15), so this should resolve on its own; on older Node you can still set `NODE_OPTIONS: "--use-system-ca"` (Node ≥ 22) in the `env` block. If you're behind a TLS-inspecting proxy whose CA isn't installed in your OS trust store, set `VTOP_INSECURE_TLS: "1"` as a last resort (disables verification — trusted networks only).
+**`unable to verify the first certificate`** — VTOP's server omits the intermediate cert (`Sectigo RSA Domain Validation Secure Server CA`), which trips Node. The server now **bundles that intermediate and supplies it to the VTOP connection**, so VTOP verifies normally out of the box (no flags needed) while every other connection stays fully verified. It also merges your OS trust store into Node's CA list at startup (Node ≥ 22.15). Only if you're *also* behind a TLS-inspecting proxy whose CA isn't in your OS store should you set `VTOP_INSECURE_TLS: "1"` as a last resort (disables verification process-wide — trusted networks only).
 
 **"It seems there are no attendance records"** — almost always a stale spawned MCP process. Quit Claude Desktop fully (tray → Quit, not just the X), then reopen.
 
