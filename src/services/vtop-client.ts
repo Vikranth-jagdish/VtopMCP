@@ -751,42 +751,69 @@ export class VtopClient {
       }
     }
 
-    try {
-      // Authenticated data goes direct (fast) — see dataClient().
-      const res = await this.dataClient().post(endpoint, formData, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      });
-      const html: string = res.data;
+    // One retry to absorb a genuine transient blip; a 404 that persists past it
+    // is treated as an expired session (see below).
+    const MAX_404_RETRIES = 1;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        // Authenticated data goes direct (fast) — see dataClient().
+        const res = await this.dataClient().post(endpoint, formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+        const html: string = res.data;
 
-      if (process.env.VTOP_DUMP_HTML && process.env.VTOP_DUMP_DIR) {
-        const fs = await import("node:fs/promises");
-        const path = await import("node:path");
-        const safe = endpoint.replace(/[^\w-]+/g, "_");
-        await fs.writeFile(
-          path.join(process.env.VTOP_DUMP_DIR, `${safe}.html`),
-          html
-        );
-      }
+        if (process.env.VTOP_DUMP_HTML && process.env.VTOP_DUMP_DIR) {
+          const fs = await import("node:fs/promises");
+          const path = await import("node:path");
+          const safe = endpoint.replace(/[^\w-]+/g, "_");
+          await fs.writeFile(
+            path.join(process.env.VTOP_DUMP_DIR, `${safe}.html`),
+            html
+          );
+        }
 
-      const lower = html.toLowerCase();
-      if (
-        lower.includes("not authorized") ||
-        lower.includes("session expired") ||
-        lower.includes("vtoploginform")
-      ) {
-        this.authenticated = false;
-        this.authorizedID = null;
-        console.error(`VtopMCP: VTOP session expired/unauthorized during ${endpoint}.`);
-        throw new Error(SESSION_EXPIRED_MSG);
-      }
+        const lower = html.toLowerCase();
+        if (
+          lower.includes("not authorized") ||
+          lower.includes("session expired") ||
+          lower.includes("vtoploginform")
+        ) {
+          this.authenticated = false;
+          this.authorizedID = null;
+          console.error(`VtopMCP: VTOP session expired/unauthorized during ${endpoint}.`);
+          throw new Error(SESSION_EXPIRED_MSG);
+        }
 
-      return html;
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.startsWith("NOT_AUTHENTICATED")) {
-        throw err;
+        return html;
+      } catch (err: unknown) {
+        if (err instanceof Error && err.message.startsWith("NOT_AUTHENTICATED")) {
+          throw err;
+        }
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        const is404 = status === 404 || /status code 404/.test(String(err));
+        if (is404) {
+          if (attempt < MAX_404_RETRIES) {
+            console.error(
+              `VtopMCP: ${endpoint} returned 404 (attempt ${attempt + 1}) — retrying once in case it's a transient VTOP blip.`,
+            );
+            await new Promise((r) => setTimeout(r, 500));
+            continue;
+          }
+          // A 404 that persists on an AUTHENTICATED request means the VTOP
+          // session has expired: VTOP serves 404 for some endpoints (e.g.
+          // academics/common/*) when the session is dead, instead of the login
+          // page. Treat it as expiry so the caller re-logs-in, rather than
+          // surfacing a confusing "backend error" the model won't recover from.
+          this.authenticated = false;
+          this.authorizedID = null;
+          console.error(
+            `VtopMCP: ${endpoint} still 404 after retry — treating as an expired session (re-login needed).`,
+          );
+          throw new Error(SESSION_EXPIRED_MSG);
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to fetch ${endpoint}: ${msg}`);
       }
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to fetch ${endpoint}: ${msg}`);
     }
   }
 }
