@@ -453,10 +453,11 @@ export function unavailablePage(origin: string, message: string): string {
 export function statsPage(users: UserStat[], note?: string): string {
   const fmt = (iso: string) => (iso ? escapeHtml(iso.slice(0, 16).replace("T", " ")) + " UTC" : "-");
   const totalLogins = users.reduce((s, u) => s + u.logins, 0);
+  const totalReuses = users.reduce((s, u) => s + u.reuses, 0);
   const rows = users
     .map(
       (u, i) =>
-        `<tr><td class="n">${i + 1}</td><td class="reg">${escapeHtml(u.regNo)}</td><td>${fmt(u.firstSeen)}</td><td>${fmt(u.lastSeen)}</td><td class="n">${u.logins}</td></tr>`,
+        `<tr><td class="n">${i + 1}</td><td class="reg">${escapeHtml(u.regNo)}</td><td>${fmt(u.firstSeen)}</td><td>${fmt(u.lastSeen)}</td><td class="n">${u.logins}</td><td class="n">${u.reuses}</td></tr>`,
     )
     .join("");
   return `<!doctype html><html lang="en"><head>
@@ -481,12 +482,12 @@ td.n{color:#9a978c}
 </style></head><body><div class="wrap">
 <h1>${BRAND} · usage</h1>
 <div class="big">${users.length}</div>
-<p class="sub">unique users · ${totalLogins} total logins</p>
+<p class="sub">unique users · ${totalLogins} fresh logins · ${totalReuses} session reuses</p>
 ${note ? `<p class="note">${escapeHtml(note)}</p>` : ""}
 ${
   users.length
-    ? `<table><thead><tr><th>#</th><th>Registration no.</th><th>First seen</th><th>Last seen</th><th>Logins</th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<p class="empty">No logins recorded yet.</p>`
+    ? `<table><thead><tr><th>#</th><th>Registration no.</th><th>First seen</th><th>Last seen</th><th>Logins</th><th>Reuses</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<p class="empty">No activity recorded yet.</p>`
 }
 </div></body></html>`;
 }

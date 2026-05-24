@@ -128,7 +128,7 @@ async function getSharedClient(key: string): Promise<VtopClient> {
   // never delays login. Works whenever a store is configured.
   if (sessionStore) {
     client.onLogin = (regNo) => {
-      void sessionStore.recordUser(regNo).catch((e) =>
+      void sessionStore.recordUser(regNo, "login").catch((e) =>
         console.error("VtopMCP: stats record failed:", e instanceof Error ? e.message : e),
       );
     };
@@ -138,8 +138,16 @@ async function getSharedClient(key: string): Promise<VtopClient> {
     try {
       const blob = await sessionStore.get(sessionKey(key));
       if (blob) {
-        client.importSession(JSON.parse(decryptString(blob)) as VtopSession);
-        console.error("VtopMCP: restored a persisted session from the store (skipping login if VTOP still accepts it).");
+        const session = JSON.parse(decryptString(blob)) as VtopSession;
+        client.importSession(session);
+        console.error("VtopMCP: resumed a persisted session from the store (no re-login needed if VTOP still accepts it).");
+        // Count the active user even though they didn't freshly log in. The reg
+        // number is right here in the restored blob — fire-and-forget, no delay.
+        if (session.authorizedID) {
+          void sessionStore.recordUser(session.authorizedID, "reuse").catch((e) =>
+            console.error("VtopMCP: stats reuse-record failed:", e instanceof Error ? e.message : e),
+          );
+        }
       }
     } catch (e) {
       console.error("VtopMCP: session restore failed:", e instanceof Error ? e.message : e);
