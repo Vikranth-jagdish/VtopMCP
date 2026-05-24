@@ -293,7 +293,7 @@ document.addEventListener("click",function(e){
   if(k){var u=k.getAttribute("data-connect");
     if(u&&navigator.clipboard)navigator.clipboard.writeText(u).catch(function(){});
     var ks=k.querySelector("span");var kt=ks?ks.textContent:"";
-    if(ks){ks.textContent="Link copied — opening…";setTimeout(function(){if(ks)ks.textContent=kt;},2200);}
+    if(ks){ks.textContent="Link copied, opening…";setTimeout(function(){if(ks)ks.textContent=kt;},2200);}
   }
   var t=e.target.closest("[data-toggle]");
   if(t){var i=document.getElementById(t.getAttribute("data-toggle"));
@@ -309,9 +309,9 @@ function howItWorks(): string {
   return `<section id="how">
   <div class="kicker"><h2 class="serif">How it works</h2><span class="line"></span></div>
   <ol class="steps">
-    ${step("01", "Enter your VTOP login", "Once, on this page — never inside a chat window.")}
+    ${step("01", "Enter your VTOP login", "Once, on this page. Never inside a chat window.")}
     ${step("02", "Get a private link", "Your credentials are encrypted into a connector URL that's yours alone.")}
-    ${step("03", "Add it to ChatGPT", "On a paid plan, turn on <em>Developer mode</em>, create an app with <em>No&nbsp;Auth</em>, then ask “what's my attendance?” — full steps come next.")}
+    ${step("03", "Add it to ChatGPT", "On a paid plan, turn on <em>Developer mode</em>, create an app with <em>No&nbsp;Auth</em>, then ask “how many classes can I bunk?”. Full steps come next.")}
   </ol>
 </section>`;
 }
@@ -322,10 +322,10 @@ function safety(): string {
   return `<section id="safe">
   <div class="kicker"><h2 class="serif">Built to be safe</h2><span class="line"></span></div>
   <ul class="safelist">
-    ${li("Encrypted, never stored.", "Your credentials are sealed with AES-256-GCM <em>inside the link itself</em>. There's no database — nothing about you is saved on the server.")}
+    ${li("Encrypted, never stored.", "Your credentials are sealed with AES-256-GCM <em>inside the link itself</em>. There's no database, and nothing about you is saved on the server.")}
     ${li("Never typed into chat.", "You sign in here, on a normal page over HTTPS, so your password is never exposed to the AI model.")}
     ${li("Only your link works.", "The link is yours alone, and it can be invalidated anytime by rotating the server's secret.")}
-    ${li("Fully open source.", "Every line is public — read exactly what runs before you trust it.")}
+    ${li("Fully open source.", "Every line is public, so read exactly what runs before you trust it.")}
   </ul>
 </section>`;
 }
@@ -350,7 +350,8 @@ export function landingPage(origin: string, canonicalPath: string): string {
   const body = `<section class="hero">
   <span class="eyebrow">MCP connector · VIT VTOP</span>
   <h1>Your VTOP,<br>now in <em>ChatGPT</em>.</h1>
-  <p class="lede">Generate a private connector link and ask for your attendance, marks, timetable, exams and CGPA — in plain English.</p>
+  <p class="lede">Generate a private connector, then just ask: <em>“how many classes can I bunk if I skip tomorrow?”</em> · <em>“what are my DBMS CAT marks?”</em> · <em>“what's my CGPA?”</em> Real answers from your own VTOP, in plain English. Attendance, marks, timetable, exams, CGPA and bunk math.</p>
+  <span class="ready" style="margin-top:18px"><span class="dot"></span>Setup in under 1 minute · just 3 steps</span>
 </section>
 <section>
   <div class="panel">
@@ -372,7 +373,7 @@ ${howItWorks()}
 ${safety()}
 ${buildYourOwn()}`;
   return layout({
-    title: `${BRAND} — Connect VIT VTOP to ChatGPT`,
+    title: `${BRAND}: Connect VIT VTOP to ChatGPT`,
     description:
       "Securely connect your VIT VTOP account to ChatGPT. Ask for your attendance, marks, timetable, exam schedule and CGPA in plain English. Credentials are encrypted, never stored.",
     origin,
@@ -418,7 +419,7 @@ export function resultPage(opts: {
   <a class="backlink" href="/register">${arrowIcon} Generate another link</a>
 </section>`;
   return layout({
-    title: `Your connector link — ${BRAND}`,
+    title: `Your connector link · ${BRAND}`,
     description: "Your personal VTOP connector link is ready to add to ChatGPT.",
     origin: opts.origin,
     canonicalPath: "/register",
@@ -434,7 +435,7 @@ export function unavailablePage(origin: string, message: string): string {
   <p class="lede">${escapeHtml(message)}</p>
 </section>`;
   return layout({
-    title: `Unavailable — ${BRAND}`,
+    title: `Unavailable · ${BRAND}`,
     description: "Self-service registration is not enabled on this deployment.",
     origin,
     canonicalPath: "/register",
