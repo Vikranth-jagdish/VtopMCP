@@ -1,5 +1,5 @@
+import https from "node:https";
 import axios, { AxiosInstance } from "axios";
-import { wrapper } from "axios-cookiejar-support";
 import { CookieJar } from "tough-cookie";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { createCookieAgent } from "http-cookie-agent/http";
@@ -9,7 +9,7 @@ import {
   NOT_AUTH_MSG,
   SESSION_EXPIRED_MSG,
 } from "./constants.js";
-import { applySystemCATrust } from "./tls.js";
+import { applySystemCATrust, vtopCaBundle } from "./tls.js";
 import {
   parseCalendarMonths,
   parseAcademicCalendar,
@@ -36,6 +36,10 @@ export interface VtopSession {
 // level. axios-cookiejar-support's wrapper() refuses a foreign http(s).Agent,
 // so when proxying we hand cookie handling to this composed agent instead.
 const HttpsProxyCookieAgent = createCookieAgent(HttpsProxyAgent);
+// Direct (no-proxy) cookie agent — same socket-level cookie handling as the
+// proxy agent, so we can give it a custom CA bundle (VTOP's missing intermediate)
+// while keeping verification on. Replaces axios-cookiejar-support's wrapper().
+const HttpsCookieAgent = createCookieAgent(https.Agent);
 
 /**
  * Resolve a proxy URL from the environment, or undefined for a direct
@@ -167,19 +171,27 @@ export class VtopClient {
       timeout: 30_000,
     };
 
+    // Supply VTOP's missing intermediate so the chain verifies (keeps TLS
+    // verification ON; see tls.ts). Scoped to this agent — other connections
+    // (Redis, etc.) are untouched.
+    const ca = vtopCaBundle();
     const proxyUrl = resolveProxyUrl();
     if (proxyUrl) {
       // Proxy path: a single agent both tunnels through the proxy and syncs the
-      // cookie jar (so we skip wrapper(), which can't coexist with our agent).
-      // proxy:false stops axios's own env-proxy logic from double-tunneling.
+      // cookie jar. proxy:false stops axios's own env-proxy logic from
+      // double-tunneling.
       return axios.create({
         ...config,
-        httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar } }),
+        httpsAgent: new HttpsProxyCookieAgent(proxyUrl, { cookies: { jar }, ca }),
         proxy: false,
       });
     }
-    // Direct path: axios-cookiejar-support manages cookies via its own agent.
-    return wrapper(axios.create({ ...config, jar }));
+    // Direct path: cookie agent handles the jar at the socket level.
+    return axios.create({
+      ...config,
+      httpsAgent: new HttpsCookieAgent({ cookies: { jar }, ca }),
+      proxy: false,
+    });
   }
 
   /**

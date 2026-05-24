@@ -176,7 +176,7 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `CONNECTOR_SECRET` | Optional | — | Set a long random string to enable **multi-user mode** on the HTTP connector: users self-register at `/register` and get an encrypted token. See [Multi-user mode](#multi-user-mode-one-connector-many-users). Leave unset for single-user mode. |
 | `VTOP_BASE_URL` | Optional | `https://vtopcc.vit.ac.in/vtop` | Override for other VIT campuses (see below). |
 | `VTOP_PROXY_URL` | Optional | — | Route VTOP traffic through an HTTP(S) proxy, e.g. `http://user:pass@host:port`. Use a **residential/mobile** proxy when hosting on a datacenter/cloud IP: VTOP raises its risk score for such IPs and serves a Google reCAPTCHA (which this server can't read) instead of the OCR-able image captcha. Falls back to the standard `HTTPS_PROXY` if unset. |
-| `VTOP_INSECURE_TLS` | Optional | — | Set to `1` only if you still hit `unable to verify the first certificate` (a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide — use only on a trusted network.** |
+| `VTOP_INSECURE_TLS` | Optional | — | Almost never needed — VTOP omits an intermediate cert, but the server now bundles it and verifies VTOP normally. Set to `1` only as a last resort if you still hit `unable to verify the first certificate` (e.g. a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide (including Redis) — use only on a trusted network.** |
 
 ### Campuses
 
@@ -222,7 +222,7 @@ npm i -g @vikranth2005/vtop-mcp
 
 (`npm i -g` installs a `vtop-mcp` command shim on your PATH; Claude Desktop runs it directly, no npx involved.) macOS/Linux/WSL users can use the `npx -y @vikranth2005/vtop-mcp` form from Quick start without issue.
 
-**`unable to verify the first certificate`** — the server now merges your OS trust store into Node's CA list automatically at startup (Node ≥ 22.15), so this should resolve on its own; on older Node you can still set `NODE_OPTIONS: "--use-system-ca"` (Node ≥ 22) in the `env` block. If you're behind a TLS-inspecting proxy whose CA isn't installed in your OS trust store, set `VTOP_INSECURE_TLS: "1"` as a last resort (disables verification — trusted networks only).
+**`unable to verify the first certificate`** — VTOP's server omits the intermediate cert (`Sectigo RSA Domain Validation Secure Server CA`), which trips Node. The server now **bundles that intermediate and supplies it to the VTOP connection**, so VTOP verifies normally out of the box (no flags needed) while every other connection stays fully verified. It also merges your OS trust store into Node's CA list at startup (Node ≥ 22.15). Only if you're *also* behind a TLS-inspecting proxy whose CA isn't in your OS store should you set `VTOP_INSECURE_TLS: "1"` as a last resort (disables verification process-wide — trusted networks only).
 
 **"It seems there are no attendance records"** — almost always a stale spawned MCP process. Quit Claude Desktop fully (tray → Quit, not just the X), then reopen.
 
