@@ -350,7 +350,7 @@ export function landingPage(origin: string, canonicalPath: string): string {
   const body = `<section class="hero">
   <span class="eyebrow">MCP connector · VIT VTOP</span>
   <h1>Your VTOP,<br>now in <em>ChatGPT</em>.</h1>
-  <p class="lede">Generate a private connector, then just ask: <em>“how many classes can I bunk if I skip tomorrow?”</em> · <em>“what are my DBMS CAT marks?”</em> · <em>“what's my CGPA?”</em> Real answers from your own VTOP, in plain English. Attendance, marks, timetable, exams, CGPA and bunk math.</p>
+  <p class="lede">Connect your VTOP to ChatGPT and just ask: <em>“how many classes can I bunk if I skip tomorrow?”</em> · <em>“how many OD hours have I used?”</em> · <em>“what's my CGPA?”</em> Real answers from your own VTOP, in plain English. Attendance, marks, timetable, exams, CGPA, OD hours and bunk math.</p>
   <span class="ready" style="margin-top:18px"><span class="dot"></span>Setup in under 1 minute · just 3 steps</span>
 </section>
 <section>
