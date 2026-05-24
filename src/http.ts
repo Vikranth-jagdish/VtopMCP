@@ -74,17 +74,25 @@ function attachPersistence(key: string, client: VtopClient): void {
   client.onSessionPersist = () => {
     try {
       const blob = encryptString(JSON.stringify(client.exportSession()));
-      void sessionStore.set(skey, blob, SESSION_PERSIST_TTL_SEC).catch((e) =>
-        console.error("VtopMCP: session persist failed:", e instanceof Error ? e.message : e),
-      );
+      void sessionStore
+        .set(skey, blob, SESSION_PERSIST_TTL_SEC)
+        .then(() =>
+          console.error(
+            `VtopMCP: session saved to Redis (key ${skey.slice(0, 8)}…, ttl ${SESSION_PERSIST_TTL_SEC}s).`,
+          ),
+        )
+        .catch((e) =>
+          console.error("VtopMCP: session persist failed:", e instanceof Error ? e.message : e),
+        );
     } catch (e) {
       console.error("VtopMCP: session encrypt failed:", e instanceof Error ? e.message : e);
     }
   };
   client.onSessionClear = () => {
-    void sessionStore.delete(skey).catch((e) =>
-      console.error("VtopMCP: session clear failed:", e instanceof Error ? e.message : e),
-    );
+    void sessionStore
+      .delete(skey)
+      .then(() => console.error(`VtopMCP: session cleared from Redis (key ${skey.slice(0, 8)}…).`))
+      .catch((e) => console.error("VtopMCP: session clear failed:", e instanceof Error ? e.message : e));
   };
 }
 
