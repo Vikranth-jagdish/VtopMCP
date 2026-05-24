@@ -16,6 +16,7 @@ delete process.env.REDIS_URL;
 const { encryptString, decryptString } = await import("../src/services/crypto.js");
 const { VtopClient } = await import("../src/services/vtop-client.js");
 const { getSessionStore } = await import("../src/services/session-store.js");
+const { statsPage } = await import("../src/web.js");
 const { CookieJar } = await import("tough-cookie");
 
 let passed = 0;
@@ -70,6 +71,20 @@ check("importSession tolerates a corrupt blob (stays unauthenticated)", () => {
 // --- store factory ---
 check("getSessionStore() is null without REDIS_URL", () => {
   assert.equal(getSessionStore(), null);
+});
+
+// --- stats dashboard rendering ---
+check("statsPage renders count, reg number, logins (noindex)", () => {
+  const html = statsPage([
+    { regNo: "23BCE1851", firstSeen: "2026-05-24T10:00:00Z", lastSeen: "2026-05-24T14:00:00Z", logins: 7 },
+  ]);
+  assert.match(html, /class="big">1</); // 1 unique user
+  assert.match(html, /23BCE1851/);
+  assert.match(html, /class="n">7</); // login count
+  assert.match(html, /noindex/); // not crawlable
+});
+check("statsPage handles no users", () => {
+  assert.match(statsPage([]), /No logins recorded/);
 });
 
 console.log(`\n${passed} checks passed.`);
