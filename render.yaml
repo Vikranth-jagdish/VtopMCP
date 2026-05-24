@@ -24,7 +24,11 @@ services:
       # - key: REDIS_URL
       #   sync: false            # set the value in the Render dashboard (secret)
       # - key: SESSION_KEEPALIVE_MS
-      #   value: "600000"        # touch VTOP every 10 min (only if kept warm)
+      #   value: "600000"        # in-process timer (only fires while awake)
+      # --- Keep sessions alive for days (recommended): set a secret, then point
+      # an external cron at /keepalive/<KEEPALIVE_TOKEN> every ~10 min. Needs REDIS_URL.
+      # - key: KEEPALIVE_TOKEN
+      #   sync: false            # set the secret value in the Render dashboard
       # --- Private usage dashboard (optional): set a secret to view stats at
       # /stats/<STATS_TOKEN> (unique users by reg number). Needs REDIS_URL.
       # - key: STATS_TOKEN

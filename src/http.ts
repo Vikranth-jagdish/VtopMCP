@@ -13,6 +13,7 @@ import {
   isMultiUserEnabled,
 } from "./services/crypto.js";
 import { getSessionStore } from "./services/session-store.js";
+import { pMap } from "./services/concurrency.js";
 import {
   landingPage,
   resultPage,
@@ -65,6 +66,11 @@ const KEEPALIVE_MS = Number(process.env.SESSION_KEEPALIVE_MS ?? 0);
 // unguessable path /stats/<STATS_TOKEN>; without this set the route is disabled
 // (404), and any wrong token also 404s, so the page is invisible to the public.
 const STATS_TOKEN = process.env.STATS_TOKEN?.trim();
+// Secret that gates the keepalive sweep at /keepalive/<KEEPALIVE_TOKEN>. Point an
+// external cron at that URL every ~10 min: the request both wakes a spun-down
+// dyno AND warms every persisted VTOP session (pinging VTOP resets its idle
+// timeout), so sessions survive for as long as the cron runs — not just 30 min.
+const KEEPALIVE_TOKEN = process.env.KEEPALIVE_TOKEN?.trim();
 
 /** Storage key for a token — hashed so the raw token never lands in the store. */
 function sessionKey(token: string): string {
@@ -213,6 +219,55 @@ app.get("/healthz", (_req, res) => {
 // fire on the initial tap, not on a 302 — so it opens in the browser tab.
 app.get(CHATGPT_OPEN_PATH, (_req, res) => {
   res.redirect(302, CHATGPT_CONNECTORS_URL);
+});
+
+// Keepalive sweep: an external cron hits /keepalive/<KEEPALIVE_TOKEN> every
+// ~10 min. The request wakes a spun-down dyno AND pings VTOP for every persisted
+// session (resetting VTOP's idle timeout) so sessions stay alive for as long as
+// the cron runs — instead of dying after 30 min. Token in the path = the secret;
+// wrong/missing token (or no KEEPALIVE_TOKEN) → 404.
+app.get("/keepalive/:token", async (req: Request, res: Response) => {
+  if (!KEEPALIVE_TOKEN || req.params.token !== KEEPALIVE_TOKEN) {
+    res.status(404).type("text/plain").send("Not found");
+    return;
+  }
+  if (!sessionStore) {
+    res.status(200).json({ checked: 0, kept: 0, dropped: 0, note: "no REDIS_URL" });
+    return;
+  }
+  let kept = 0;
+  let dropped = 0;
+  try {
+    const sessions = await sessionStore.listSessions();
+    await pMap(
+      sessions,
+      async ({ key, blob }) => {
+        try {
+          const client = new VtopClient();
+          client.importSession(JSON.parse(decryptString(blob)) as VtopSession);
+          if (await client.keepAlive()) {
+            // Re-save the (possibly refreshed) session and bump its TTL.
+            await sessionStore!.set(
+              key,
+              encryptString(JSON.stringify(client.exportSession())),
+              SESSION_PERSIST_TTL_SEC,
+            );
+            kept++;
+          } else {
+            await sessionStore!.delete(key); // VTOP dropped it — stop tracking
+            dropped++;
+          }
+        } catch {
+          dropped++;
+        }
+      },
+      5,
+    );
+    console.error(`VtopMCP: keepalive sweep — ${kept} kept warm, ${dropped} dropped.`);
+    res.status(200).set("Cache-Control", "no-store").json({ checked: sessions.length, kept, dropped });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+  }
 });
 
 // Secret usage-stats dashboard at /stats/<STATS_TOKEN>. Token is in the path,
@@ -461,6 +516,9 @@ app.listen(PORT, () => {
       );
   }
   if (KEEPALIVE_MS > 0) {
-    console.error(`VtopMCP: session keepalive ON (every ${Math.round(KEEPALIVE_MS / 1000)}s).`);
+    console.error(`VtopMCP: in-process session keepalive ON (every ${Math.round(KEEPALIVE_MS / 1000)}s).`);
+  }
+  if (KEEPALIVE_TOKEN && sessionStore) {
+    console.error("VtopMCP: keepalive sweep ON — point a cron at /keepalive/<token> every ~10 min to keep sessions warm.");
   }
 });

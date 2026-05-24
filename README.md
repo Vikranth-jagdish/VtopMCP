@@ -127,15 +127,16 @@ How it works: the token is the user's credentials **encrypted** (AES-256-GCM) wi
 
 Logging in is the slow part — VTOP requires a **captcha on every login**, which can't be skipped. The fix is to log in *rarely* by reusing one authenticated VTOP session for as long as possible. The server already reuses a live session in memory (30‑min idle window), but that's lost whenever the process restarts (a redeploy, or a free‑tier **spin‑down after ~15 min idle**), forcing a fresh captcha+login.
 
-Three optional knobs make a single login last much longer:
+VTOP's session is **idle‑only** (verified): it expires after ~30 min of inactivity, but any authenticated request resets that timer. So a session can be kept alive for days (like the VTOP mobile app does) by pinging it periodically. These knobs do that:
 
 | Env var | Effect |
 |---|---|
 | `REDIS_URL` | Persist each authenticated session (cookies only, **encrypted** with `CONNECTOR_SECRET`) to Redis. After a restart/spin‑down the server rehydrates it and **skips captcha+login** — as long as VTOP still considers the session valid. Requires `CONNECTOR_SECRET`. Works with any Redis (e.g. Upstash's free tier). **For a TLS endpoint (Upstash etc.) use the `rediss://` scheme** (double‑s), e.g. `rediss://default:<password>@<host>:6379` — `redis://` won't enable TLS and the connection will fail. The server logs whether Redis is reachable at startup. |
-| `SESSION_KEEPALIVE_MS` | Periodically touch VTOP for each live session so its server‑side timer doesn't idle out (e.g. `600000` = 10 min). Only useful on an always‑on / kept‑warm host. Off by default. |
-| `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h). |
+| `KEEPALIVE_TOKEN` | **The reliable way to keep sessions alive for days.** Enables a sweep at the secret path **`/keepalive/<KEEPALIVE_TOKEN>`**. Point an external cron (e.g. cron‑job.org) at that URL every ~10 min: the request **wakes a spun‑down dyno** *and* pings VTOP for **every persisted session** (resetting each idle timer) and re‑saves them. Requires `REDIS_URL`. Wrong/missing token → 404. This is what makes a login last days instead of 30 min, even on a free tier that sleeps. |
+| `SESSION_KEEPALIVE_MS` | In‑process keepalive timer (e.g. `600000` = 10 min). Only fires while the dyno is awake, so it's superseded by `KEEPALIVE_TOKEN` on a sleepy free tier. Off by default. |
+| `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h) — the keepalive sweep refreshes it on every pass. |
 
-To actually keep sessions alive between visits, also keep the server **warm**: either use a non‑free Render plan (no spin‑down), or point an uptime monitor / cron at **`/healthz`** (a cheap always‑200 endpoint) every ~10 min. Don't point it at `/mcp` — that's the protocol endpoint and returns 401/400 to a bare GET, so a cron will mark itself failed. Persistence alone won't help if the box sleeps *and* VTOP times the cookies out in the meantime.
+**Recommended setup for "log in once, stay logged in":** set `REDIS_URL` + `CONNECTOR_SECRET` + `KEEPALIVE_TOKEN`, then point a cron at `https://<host>/keepalive/<KEEPALIVE_TOKEN>` every 10 min. (Don't point the cron at `/mcp` — that's the protocol endpoint and 401/400s a bare GET; `/keepalive/<token>` returns 200 JSON and doubles as the keep‑warm ping.)
 
 What's stored is only an **encrypted session cookie** (never the password — that stays in the user's URL token), namespaced and TTL‑bounded. With no `REDIS_URL` set, behaviour is exactly as before: memory‑only, nothing persisted.
 
@@ -179,6 +180,7 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `VTOP_PROXY_ALL` | Optional | — | Set to `1` to force **all** VTOP traffic (login *and* data) through `VTOP_PROXY_URL`, skipping the direct-first attempt. Slower; only needed if direct requests are blocked entirely. |
 | `VTOP_TIMEOUT_MS` | Optional | `30000` | Per-request HTTP timeout (ms). Bump it (e.g. `60000`) if you use a slow residential proxy and see timeouts on login. |
 | `VTOP_INSECURE_TLS` | Optional | — | Almost never needed — VTOP omits an intermediate cert, but the server now bundles it and verifies VTOP normally. Set to `1` only as a last resort if you still hit `unable to verify the first certificate` (e.g. a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide (including Redis) — use only on a trusted network.** |
+| `KEEPALIVE_TOKEN` | Optional | — | Enables the keepalive sweep at `/keepalive/<KEEPALIVE_TOKEN>` — point a cron there every ~10 min to keep every persisted session alive for days (see [Fewer logins](#fewer-logins-optional-session-persistence)). Requires `REDIS_URL`. Wrong/missing token → 404. |
 | `STATS_TOKEN` | Optional | — | Enables a private usage dashboard at the secret path **`/stats/<STATS_TOKEN>`** (unique users by registration number, with first/last seen, fresh-login counts, and session-reuse counts). Requires `REDIS_URL`. Without it the route 404s (and any wrong token 404s), so the page is invisible to the public. Reg numbers are recorded on both fresh login and persisted-session resume as fire-and-forget writes, so request speed is unaffected. **Note:** this stores PII (registration numbers), so the landing page wording reflects that basic usage stats are kept. |
 
 ### Campuses
