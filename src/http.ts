@@ -113,7 +113,10 @@ async function getSharedClient(key: string): Promise<VtopClient> {
   if (sessionStore && isMultiUserEnabled()) {
     try {
       const blob = await sessionStore.get(sessionKey(key));
-      if (blob) client.importSession(JSON.parse(decryptString(blob)) as VtopSession);
+      if (blob) {
+        client.importSession(JSON.parse(decryptString(blob)) as VtopSession);
+        console.error("VtopMCP: restored a persisted session from the store (skipping login if VTOP still accepts it).");
+      }
     } catch (e) {
       console.error("VtopMCP: session restore failed:", e instanceof Error ? e.message : e);
     }

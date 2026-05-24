@@ -308,9 +308,21 @@ export class VtopClient {
         html.match(
           /<img[^>]+src="(data:image\/(?:png|jpeg|jpg);base64,[A-Za-z0-9+/=]+)"/,
         );
-      if (match) return match[1];
+      if (match) {
+        console.error(`VtopMCP: captcha image served (attempt ${attempt}/${MAX_ATTEMPTS}).`);
+        return match[1];
+      }
 
-      if (/data-sitekey="[^"]+"/i.test(html)) sawRecaptcha = true;
+      if (/data-sitekey="[^"]+"/i.test(html)) {
+        sawRecaptcha = true;
+        console.error(
+          `VtopMCP: login page served Google reCAPTCHA (attempt ${attempt}/${MAX_ATTEMPTS}) — re-rolling for the image variant.`,
+        );
+      } else {
+        console.error(
+          `VtopMCP: no captcha image found on login page (attempt ${attempt}/${MAX_ATTEMPTS}). ${describeLoginPage(html)}`,
+        );
+      }
 
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
@@ -318,6 +330,7 @@ export class VtopClient {
     }
 
     if (sawRecaptcha) {
+      console.error("VtopMCP: giving up — reCAPTCHA served on every attempt (high risk score; consider VTOP_PROXY_URL).");
       throw new Error(
         "VTOP kept serving a Google reCAPTCHA instead of the image captcha across " +
           `${MAX_ATTEMPTS} attempts, so no readable captcha could be obtained. VTOP shows ` +
@@ -357,11 +370,13 @@ export class VtopClient {
 
       if (this.absorbAuthFromHtml(html)) {
         this.onSessionPersist?.();
+        console.error("VtopMCP: login OK.");
         return { success: true, message: "Successfully logged in to VTOP." };
       }
 
       const lower = html.toLowerCase();
       if (/invalid\s*captcha/.test(lower)) {
+        console.error("VtopMCP: login failed — VTOP reported invalid captcha (OCR misread or expired).");
         return {
           success: false,
           message:
@@ -373,15 +388,18 @@ export class VtopClient {
           lower
         )
       ) {
+        console.error("VtopMCP: login failed — invalid username/password.");
         return { success: false, message: "Invalid username or password." };
       }
       if (/account\s*is\s*locked/.test(lower)) {
+        console.error("VtopMCP: login failed — account locked.");
         return {
           success: false,
           message: "Account is locked. Please contact VIT administration.",
         };
       }
       if (/maximum\s*fail\s*attempts\s*reached/.test(lower)) {
+        console.error("VtopMCP: login failed — maximum fail attempts reached.");
         return {
           success: false,
           message:
@@ -395,6 +413,7 @@ export class VtopClient {
         const contentRes = await this.client.get("/content");
         if (this.absorbAuthFromHtml(contentRes.data)) {
           this.onSessionPersist?.();
+          console.error("VtopMCP: login OK (via /content fallback).");
           return { success: true, message: "Successfully logged in to VTOP." };
         }
       } catch {
@@ -402,6 +421,9 @@ export class VtopClient {
       }
 
       this.authenticated = false;
+      console.error(
+        `VtopMCP: login failed — unrecognized response (htmlLen=${html.length}). ${describeLoginPage(html)}`,
+      );
       return {
         success: false,
         message:
@@ -415,6 +437,7 @@ export class VtopClient {
       // session than the one we're posting from. The captcha can't be replayed
       // on a fresh session, so the only recovery is a brand-new captcha.
       if (status === 404 || /status code 404/.test(String(err))) {
+        console.error("VtopMCP: login failed — VTOP 404 (prelogin session not armed on this client).");
         return {
           success: false,
           message:
@@ -424,6 +447,7 @@ export class VtopClient {
         };
       }
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`VtopMCP: login request error${status ? ` (status ${status})` : ""}: ${msg}`);
       return { success: false, message: `Login request failed: ${msg}` };
     }
   }
@@ -654,6 +678,7 @@ export class VtopClient {
       ) {
         this.authenticated = false;
         this.authorizedID = null;
+        console.error(`VtopMCP: VTOP session expired/unauthorized during ${endpoint}.`);
         throw new Error(SESSION_EXPIRED_MSG);
       }
 

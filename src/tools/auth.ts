@@ -14,7 +14,25 @@ export function registerAuthTools(
     "get_captcha",
     "Step 1 of login: fetch a CAPTCHA image from VTOP. Returns the image so you (the model) can OCR it. After this, immediately call `login` with the captcha text you read — do NOT ask the user to read it for you. The user only needs to be asked for credentials if VTOP_USERNAME / VTOP_PASSWORD are not set as env vars on the server.",
     EmptySchema.shape,
+    // Reads a captcha + arms the prelogin session: not read-only, but not
+    // destructive either (no user data is changed). The hints stop MCP clients
+    // from flagging it as a destructive write and prompting on every call.
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async () => {
+      // If a session already exists (restored from the store, or from an earlier
+      // call in this process), there's nothing to log into — skip the captcha so
+      // we don't waste an OCR round and risk an unnecessary login failure.
+      if (client.isAuthenticated) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "You already have an active VTOP session — no captcha or login needed. Call the data tool you need directly. Only call get_captcha again if a tool returns NOT_AUTHENTICATED.",
+            },
+          ],
+        };
+      }
       try {
         const dataUrl = await client.getCaptcha();
         const match = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
@@ -52,7 +70,20 @@ export function registerAuthTools(
     "login",
     "Step 2 of login: submit credentials + the captcha you just OCR'd. Username/password are optional — if VTOP_USERNAME and VTOP_PASSWORD are set as env vars on the MCP server, omit them and the server uses the stored values. Only ask the user for credentials if the server reports they're not configured.",
     LoginSchema.shape,
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async ({ username, password, captcha }) => {
+      // Already authenticated (e.g. a restored session) — don't re-login.
+      if (client.isAuthenticated) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "Already logged in to VTOP — no need to log in again. Proceed directly to the data tool you need.",
+            },
+          ],
+        };
+      }
       const user = username ?? credentials?.username ?? process.env.VTOP_USERNAME;
       const pass = password ?? credentials?.password ?? process.env.VTOP_PASSWORD;
       if (!user || !pass) {
@@ -96,6 +127,7 @@ export function registerAuthTools(
     "logout",
     "Logout from VTOP and clear the session.",
     EmptySchema.shape,
+    { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     async () => {
       await client.logout();
       return {
