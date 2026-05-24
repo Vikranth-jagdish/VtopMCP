@@ -13,6 +13,14 @@
  * expire on their own.
  */
 
+/** One row of operator-facing usage stats, keyed by VTOP registration number. */
+export interface UserStat {
+  regNo: string;
+  firstSeen: string;
+  lastSeen: string;
+  logins: number;
+}
+
 export interface SessionStore {
   /** Returns the stored ciphertext for a key, or null if absent. */
   get(key: string): Promise<string | null>;
@@ -20,11 +28,20 @@ export interface SessionStore {
   set(key: string, value: string, ttlSeconds: number): Promise<void>;
   /** Removes a key (e.g. on logout). */
   delete(key: string): Promise<void>;
+  /** Record a successful login for usage stats (first-seen set once; kept forever). */
+  recordUser(regNo: string): Promise<void>;
+  /** All recorded users, oldest first. */
+  listUsers(): Promise<UserStat[]>;
   /** Short label for logs. */
   readonly kind: string;
 }
 
 const KEY_PREFIX = "vtopmcp:sess:";
+// Usage-stats hashes (operator-facing), keyed by registration number. No TTL —
+// kept forever. Atomic field ops (HSETNX/HINCRBY) avoid read-modify-write races.
+const STATS_FIRST = "vtopmcp:users:first"; // regNo -> first-seen ISO
+const STATS_LAST = "vtopmcp:users:last"; // regNo -> last-seen ISO
+const STATS_LOGINS = "vtopmcp:users:logins"; // regNo -> login count
 
 /**
  * Redis-backed store. ioredis is loaded lazily (and is an optional dependency)
@@ -73,6 +90,32 @@ class RedisSessionStore implements SessionStore {
     const c = await this.client();
     await c.del(KEY_PREFIX + key);
   }
+
+  async recordUser(regNo: string): Promise<void> {
+    if (!regNo) return;
+    const c = await this.client();
+    const now = new Date().toISOString();
+    await c.hsetnx(STATS_FIRST, regNo, now); // only the first time
+    await c.hset(STATS_LAST, regNo, now);
+    await c.hincrby(STATS_LOGINS, regNo, 1);
+  }
+
+  async listUsers(): Promise<UserStat[]> {
+    const c = await this.client();
+    const [first, last, logins] = await Promise.all([
+      c.hgetall(STATS_FIRST),
+      c.hgetall(STATS_LAST),
+      c.hgetall(STATS_LOGINS),
+    ]);
+    return Object.keys(first)
+      .map((regNo) => ({
+        regNo,
+        firstSeen: first[regNo] ?? "",
+        lastSeen: last[regNo] ?? "",
+        logins: Number(logins[regNo] ?? 0),
+      }))
+      .sort((a, b) => a.firstSeen.localeCompare(b.firstSeen));
+  }
 }
 
 // Minimal structural types for the bits of ioredis we use (avoids a hard
@@ -81,6 +124,10 @@ interface RedisLike {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, mode: "EX", ttl: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
+  hsetnx(key: string, field: string, value: string): Promise<number>;
+  hset(key: string, field: string, value: string): Promise<number>;
+  hincrby(key: string, field: string, increment: number): Promise<number>;
+  hgetall(key: string): Promise<Record<string, string>>;
   on(event: "error", listener: (err: unknown) => void): void;
 }
 interface RedisCtor {

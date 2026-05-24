@@ -179,6 +179,7 @@ All per-semester tools auto-pick the current semester if `semesterId` is omitted
 | `VTOP_PROXY_ALL` | Optional | — | Set to `1` to force **all** VTOP traffic (login *and* data) through `VTOP_PROXY_URL`, skipping the direct-first attempt. Slower; only needed if direct requests are blocked entirely. |
 | `VTOP_TIMEOUT_MS` | Optional | `30000` | Per-request HTTP timeout (ms). Bump it (e.g. `60000`) if you use a slow residential proxy and see timeouts on login. |
 | `VTOP_INSECURE_TLS` | Optional | — | Almost never needed — VTOP omits an intermediate cert, but the server now bundles it and verifies VTOP normally. Set to `1` only as a last resort if you still hit `unable to verify the first certificate` (e.g. a TLS-inspecting proxy whose CA isn't in your OS trust store). **Disables certificate verification process-wide (including Redis) — use only on a trusted network.** |
+| `STATS_TOKEN` | Optional | — | Enables a private usage dashboard at the secret path **`/stats/<STATS_TOKEN>`** (count of unique users by registration number, with first/last seen and login counts). Requires `REDIS_URL`. Without it the route 404s (and any wrong token 404s), so the page is invisible to the public. Reg numbers are recorded on login as a fire-and-forget write, so login speed is unaffected. **Note:** this stores PII (registration numbers), so the landing page wording reflects that basic usage stats are kept. |
 
 ### Campuses
 

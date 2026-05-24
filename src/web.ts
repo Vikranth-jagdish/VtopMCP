@@ -7,6 +7,8 @@
 // detail, hairline rules instead of shadows, near-monochrome with a single
 // restrained accent. Light + dark via prefers-color-scheme.
 
+import type { UserStat } from "./services/session-store.js";
+
 const BRAND = "VTOP Connector";
 const REPO_URL = "https://github.com/Vikranth-jagdish/VtopMCP";
 const AUTHOR_URL = "https://www.vikranth.space/labs/vtop-mcp";
@@ -322,7 +324,7 @@ function safety(): string {
   return `<section id="safe">
   <div class="kicker"><h2 class="serif">Built to be safe</h2><span class="line"></span></div>
   <ul class="safelist">
-    ${li("Encrypted, never stored.", "Your credentials are sealed with AES-256-GCM <em>inside the link itself</em>. There's no database, and nothing about you is saved on the server.")}
+    ${li("Password never stored.", "Your password is sealed with AES-256-GCM <em>inside the link itself</em>, never written to a database. Only basic usage stats are kept.")}
     ${li("Never typed into chat.", "You sign in here, on a normal page over HTTPS, so your password is never exposed to the AI model.")}
     ${li("Only your link works.", "The link is yours alone, and it can be invalidated anytime by rotating the server's secret.")}
     ${li("Fully open source.", "Every line is public, so read exactly what runs before you trust it.")}
@@ -442,6 +444,51 @@ export function unavailablePage(origin: string, message: string): string {
     body,
     noindex: true,
   });
+}
+
+/**
+ * Private operator dashboard rendered at the secret /stats/<token> route.
+ * Standalone, noindex, no SEO tags — it's not meant to be discovered.
+ */
+export function statsPage(users: UserStat[], note?: string): string {
+  const fmt = (iso: string) => (iso ? escapeHtml(iso.slice(0, 16).replace("T", " ")) + " UTC" : "-");
+  const totalLogins = users.reduce((s, u) => s + u.logins, 0);
+  const rows = users
+    .map(
+      (u, i) =>
+        `<tr><td class="n">${i + 1}</td><td class="reg">${escapeHtml(u.regNo)}</td><td>${fmt(u.firstSeen)}</td><td>${fmt(u.lastSeen)}</td><td class="n">${u.logins}</td></tr>`,
+    )
+    .join("");
+  return `<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Usage · ${BRAND}</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#15140f;color:#ece9df;font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:40px 20px}
+.wrap{max-width:880px;margin:0 auto}
+h1{font-size:14px;letter-spacing:.22em;text-transform:uppercase;color:#bf3d24;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:0 0 18px}
+.big{font-size:clamp(48px,12vw,84px);font-weight:600;line-height:1}
+.sub{color:#9a978c;margin:4px 0 28px}
+.note{color:#d8a23a;margin:0 0 20px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #2a281f}
+th{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9a978c;font-weight:500}
+td.reg{font-family:ui-monospace,monospace;color:#fff}
+td.n{color:#9a978c}
+.empty{color:#9a978c;padding:24px 0}
+</style></head><body><div class="wrap">
+<h1>${BRAND} · usage</h1>
+<div class="big">${users.length}</div>
+<p class="sub">unique users · ${totalLogins} total logins</p>
+${note ? `<p class="note">${escapeHtml(note)}</p>` : ""}
+${
+  users.length
+    ? `<table><thead><tr><th>#</th><th>Registration no.</th><th>First seen</th><th>Last seen</th><th>Logins</th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<p class="empty">No logins recorded yet.</p>`
+}
+</div></body></html>`;
 }
 
 export function ogImageSvg(): string {

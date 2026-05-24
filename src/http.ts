@@ -20,6 +20,7 @@ import {
   ogImageSvg,
   robotsTxt,
   sitemapXml,
+  statsPage,
   CHATGPT_CONNECTORS_URL,
   CHATGPT_OPEN_PATH,
 } from "./web.js";
@@ -60,6 +61,10 @@ const SESSION_PERSIST_TTL_SEC = Number(process.env.SESSION_PERSIST_TTL_SEC ?? 2 
 // server-side timer doesn't idle out (and refresh the persisted copy). Off by
 // default (0); only useful on an always-on / kept-warm host. Suggest ~600000.
 const KEEPALIVE_MS = Number(process.env.SESSION_KEEPALIVE_MS ?? 0);
+// Secret that gates the usage-stats dashboard. The dashboard lives at the
+// unguessable path /stats/<STATS_TOKEN>; without this set the route is disabled
+// (404), and any wrong token also 404s, so the page is invisible to the public.
+const STATS_TOKEN = process.env.STATS_TOKEN?.trim();
 
 /** Storage key for a token — hashed so the raw token never lands in the store. */
 function sessionKey(token: string): string {
@@ -119,6 +124,15 @@ async function getSharedClient(key: string): Promise<VtopClient> {
   }
   const client = new VtopClient();
   attachPersistence(key, client);
+  // Record usage stats on login (by registration number). Fire-and-forget so it
+  // never delays login. Works whenever a store is configured.
+  if (sessionStore) {
+    client.onLogin = (regNo) => {
+      void sessionStore.recordUser(regNo).catch((e) =>
+        console.error("VtopMCP: stats record failed:", e instanceof Error ? e.message : e),
+      );
+    };
+  }
   // Cold miss: try to restore a persisted session so the user skips re-login.
   if (sessionStore && isMultiUserEnabled()) {
     try {
@@ -191,6 +205,33 @@ app.get("/healthz", (_req, res) => {
 // fire on the initial tap, not on a 302 — so it opens in the browser tab.
 app.get(CHATGPT_OPEN_PATH, (_req, res) => {
   res.redirect(302, CHATGPT_CONNECTORS_URL);
+});
+
+// Secret usage-stats dashboard at /stats/<STATS_TOKEN>. Token is in the path,
+// so the route itself is the secret; a wrong token (or no STATS_TOKEN set) 404s
+// so the page is indistinguishable from a non-existent route. Not linked, not
+// in robots/sitemap.
+app.get("/stats/:token", async (req: Request, res: Response) => {
+  if (!STATS_TOKEN || req.params.token !== STATS_TOKEN) {
+    res.status(404).type("text/plain").send("Not found");
+    return;
+  }
+  if (!sessionStore) {
+    res
+      .status(200)
+      .type("html")
+      .send(statsPage([], "Stats require REDIS_URL (no store configured)."));
+    return;
+  }
+  try {
+    const users = await sessionStore.listUsers();
+    res.status(200).set("Cache-Control", "no-store").type("html").send(statsPage(users));
+  } catch (e) {
+    res
+      .status(500)
+      .type("text/plain")
+      .send(`Stats error: ${e instanceof Error ? e.message : e}`);
+  }
 });
 
 app.get("/", (req, res) => {

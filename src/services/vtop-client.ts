@@ -134,6 +134,12 @@ export class VtopClient {
   onSessionPersist?: () => void;
   /** Fired when the session is gone (logout) and any persisted copy should drop. */
   onSessionClear?: () => void;
+  /**
+   * Fired once on a successful login with the VTOP authorizedID (the student's
+   * registration number). Used by the HTTP layer to record usage stats. Should
+   * be fire-and-forget so it never delays login.
+   */
+  onLogin?: (regNo: string) => void;
   private cachedActiveSemesterId: string | null = null;
   private cachedGradeHistoryHtml: string | null = null;
   private cachedCalendarSem: string | null = null;
@@ -459,6 +465,7 @@ export class VtopClient {
 
       if (this.absorbAuthFromHtml(html)) {
         this.onSessionPersist?.();
+        if (this.authorizedID) this.onLogin?.(this.authorizedID);
         console.error("VtopMCP: login OK.");
         return { success: true, message: "Successfully logged in to VTOP." };
       }
@@ -502,6 +509,7 @@ export class VtopClient {
         const contentRes = await loginClient.get("/content");
         if (this.absorbAuthFromHtml(contentRes.data)) {
           this.onSessionPersist?.();
+          if (this.authorizedID) this.onLogin?.(this.authorizedID);
           console.error("VtopMCP: login OK (via /content fallback).");
           return { success: true, message: "Successfully logged in to VTOP." };
         }
