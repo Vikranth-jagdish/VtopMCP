@@ -31,6 +31,8 @@ export interface SessionStore {
   set(key: string, value: string, ttlSeconds: number): Promise<void>;
   /** Removes a key (e.g. on logout). */
   delete(key: string): Promise<void>;
+  /** Every persisted session blob with its key, for the keepalive sweep. */
+  listSessions(): Promise<{ key: string; blob: string }[]>;
   /**
    * Record activity for usage stats (first-seen set once; kept forever).
    * `kind` is "login" for a fresh captcha+login, or "reuse" when a persisted
@@ -44,6 +46,9 @@ export interface SessionStore {
 }
 
 const KEY_PREFIX = "vtopmcp:sess:";
+// Index of live session keys so the keepalive sweep can enumerate sessions
+// without a Redis keyspace SCAN.
+const SESS_INDEX = "vtopmcp:sess:index";
 // Usage-stats hashes (operator-facing), keyed by registration number. No TTL —
 // kept forever. Atomic field ops (HSETNX/HINCRBY) avoid read-modify-write races.
 const STATS_FIRST = "vtopmcp:users:first"; // regNo -> first-seen ISO
@@ -92,11 +97,25 @@ class RedisSessionStore implements SessionStore {
   async set(key: string, value: string, ttlSeconds: number): Promise<void> {
     const c = await this.client();
     await c.set(KEY_PREFIX + key, value, "EX", Math.max(1, Math.floor(ttlSeconds)));
+    await c.sadd(SESS_INDEX, key);
   }
 
   async delete(key: string): Promise<void> {
     const c = await this.client();
     await c.del(KEY_PREFIX + key);
+    await c.srem(SESS_INDEX, key);
+  }
+
+  async listSessions(): Promise<{ key: string; blob: string }[]> {
+    const c = await this.client();
+    const keys = await c.smembers(SESS_INDEX);
+    const out: { key: string; blob: string }[] = [];
+    for (const key of keys) {
+      const blob = await c.get(KEY_PREFIX + key);
+      if (blob) out.push({ key, blob });
+      else await c.srem(SESS_INDEX, key); // expired/gone — prune the index
+    }
+    return out;
   }
 
   async recordUser(regNo: string, kind: "login" | "reuse"): Promise<void> {
@@ -138,6 +157,9 @@ interface RedisLike {
   hset(key: string, field: string, value: string): Promise<number>;
   hincrby(key: string, field: string, increment: number): Promise<number>;
   hgetall(key: string): Promise<Record<string, string>>;
+  sadd(key: string, member: string): Promise<number>;
+  srem(key: string, member: string): Promise<number>;
+  smembers(key: string): Promise<string[]>;
   on(event: "error", listener: (err: unknown) => void): void;
 }
 interface RedisCtor {
