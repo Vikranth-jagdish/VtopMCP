@@ -18,7 +18,10 @@ export interface UserStat {
   regNo: string;
   firstSeen: string;
   lastSeen: string;
+  /** Fresh captcha+login events. */
   logins: number;
+  /** Times an active session was resumed from the store (no fresh login). */
+  reuses: number;
 }
 
 export interface SessionStore {
@@ -28,8 +31,12 @@ export interface SessionStore {
   set(key: string, value: string, ttlSeconds: number): Promise<void>;
   /** Removes a key (e.g. on logout). */
   delete(key: string): Promise<void>;
-  /** Record a successful login for usage stats (first-seen set once; kept forever). */
-  recordUser(regNo: string): Promise<void>;
+  /**
+   * Record activity for usage stats (first-seen set once; kept forever).
+   * `kind` is "login" for a fresh captcha+login, or "reuse" when a persisted
+   * session was resumed without logging in again.
+   */
+  recordUser(regNo: string, kind: "login" | "reuse"): Promise<void>;
   /** All recorded users, oldest first. */
   listUsers(): Promise<UserStat[]>;
   /** Short label for logs. */
@@ -41,7 +48,8 @@ const KEY_PREFIX = "vtopmcp:sess:";
 // kept forever. Atomic field ops (HSETNX/HINCRBY) avoid read-modify-write races.
 const STATS_FIRST = "vtopmcp:users:first"; // regNo -> first-seen ISO
 const STATS_LAST = "vtopmcp:users:last"; // regNo -> last-seen ISO
-const STATS_LOGINS = "vtopmcp:users:logins"; // regNo -> login count
+const STATS_LOGINS = "vtopmcp:users:logins"; // regNo -> fresh-login count
+const STATS_REUSES = "vtopmcp:users:reuses"; // regNo -> session-resume count
 
 /**
  * Redis-backed store. ioredis is loaded lazily (and is an optional dependency)
@@ -91,21 +99,22 @@ class RedisSessionStore implements SessionStore {
     await c.del(KEY_PREFIX + key);
   }
 
-  async recordUser(regNo: string): Promise<void> {
+  async recordUser(regNo: string, kind: "login" | "reuse"): Promise<void> {
     if (!regNo) return;
     const c = await this.client();
     const now = new Date().toISOString();
-    await c.hsetnx(STATS_FIRST, regNo, now); // only the first time
+    await c.hsetnx(STATS_FIRST, regNo, now); // only the first time ever seen
     await c.hset(STATS_LAST, regNo, now);
-    await c.hincrby(STATS_LOGINS, regNo, 1);
+    await c.hincrby(kind === "login" ? STATS_LOGINS : STATS_REUSES, regNo, 1);
   }
 
   async listUsers(): Promise<UserStat[]> {
     const c = await this.client();
-    const [first, last, logins] = await Promise.all([
+    const [first, last, logins, reuses] = await Promise.all([
       c.hgetall(STATS_FIRST),
       c.hgetall(STATS_LAST),
       c.hgetall(STATS_LOGINS),
+      c.hgetall(STATS_REUSES),
     ]);
     return Object.keys(first)
       .map((regNo) => ({
@@ -113,6 +122,7 @@ class RedisSessionStore implements SessionStore {
         firstSeen: first[regNo] ?? "",
         lastSeen: last[regNo] ?? "",
         logins: Number(logins[regNo] ?? 0),
+        reuses: Number(reuses[regNo] ?? 0),
       }))
       .sort((a, b) => a.firstSeen.localeCompare(b.firstSeen));
   }
