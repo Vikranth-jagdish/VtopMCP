@@ -165,6 +165,13 @@ function originOf(req: Request): string {
   return `${req.protocol}://${req.get("host")}`;
 }
 
+// Cheap, always-200 endpoint for uptime pingers / keep-warm cron jobs. Unlike
+// /mcp (which is the MCP protocol endpoint and returns 401/400 to a bare GET),
+// this just confirms the process is up — point your keep-warm cron here.
+app.get("/healthz", (_req, res) => {
+  res.type("text/plain").set("Cache-Control", "no-store").send("ok");
+});
+
 app.get("/", (req, res) => {
   // In multi-user mode the root is the landing/registration experience; in
   // single-user mode it stays a small JSON info endpoint. Both return 200 so

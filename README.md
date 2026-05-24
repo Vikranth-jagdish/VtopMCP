@@ -135,7 +135,7 @@ Three optional knobs make a single login last much longer:
 | `SESSION_KEEPALIVE_MS` | Periodically touch VTOP for each live session so its server‑side timer doesn't idle out (e.g. `600000` = 10 min). Only useful on an always‑on / kept‑warm host. Off by default. |
 | `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h). |
 
-To actually keep sessions alive between visits, also keep the server **warm**: either use a non‑free Render plan (no spin‑down), or point an uptime monitor at `/` every ~10 min. Persistence alone won't help if the box sleeps *and* VTOP times the cookies out in the meantime.
+To actually keep sessions alive between visits, also keep the server **warm**: either use a non‑free Render plan (no spin‑down), or point an uptime monitor / cron at **`/healthz`** (a cheap always‑200 endpoint) every ~10 min. Don't point it at `/mcp` — that's the protocol endpoint and returns 401/400 to a bare GET, so a cron will mark itself failed. Persistence alone won't help if the box sleeps *and* VTOP times the cookies out in the meantime.
 
 What's stored is only an **encrypted session cookie** (never the password — that stays in the user's URL token), namespaced and TTL‑bounded. With no `REDIS_URL` set, behaviour is exactly as before: memory‑only, nothing persisted.
 
