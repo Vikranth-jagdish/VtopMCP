@@ -20,6 +20,8 @@ import {
   ogImageSvg,
   robotsTxt,
   sitemapXml,
+  CHATGPT_CONNECTORS_URL,
+  CHATGPT_OPEN_PATH,
 } from "./web.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -181,6 +183,14 @@ function originOf(req: Request): string {
 // this just confirms the process is up — point your keep-warm cron here.
 app.get("/healthz", (_req, res) => {
   res.type("text/plain").set("Cache-Control", "no-store").send("ok");
+});
+
+// Bounce the "Connect to ChatGPT" button to ChatGPT via a server redirect.
+// Going through our own (non-app-associated) domain stops mobile OSes from
+// hijacking the chatgpt.com link into the ChatGPT app — universal-/app-links
+// fire on the initial tap, not on a 302 — so it opens in the browser tab.
+app.get(CHATGPT_OPEN_PATH, (_req, res) => {
+  res.redirect(302, CHATGPT_CONNECTORS_URL);
 });
 
 app.get("/", (req, res) => {

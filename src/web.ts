@@ -19,8 +19,15 @@ const NPM_URL = "https://www.npmjs.com/package/@vikranth2005/vtop-mcp";
 // install/prefill API and same-origin rules forbid us from touching its tab,
 // so this is the closest one-click flow possible: drop the user on the exact
 // page and copy the URL, leaving only flip-toggle, Create, paste.
-const CHATGPT_CONNECTORS_URL =
+export const CHATGPT_CONNECTORS_URL =
   "https://chatgpt.com/apps#settings/Connectors/Advanced";
+
+// Same-origin path the "Connect" button points at. The server 302-redirects it
+// to CHATGPT_CONNECTORS_URL. Routing through our own (non-app-associated) domain
+// stops mobile OSes from hijacking the chatgpt.com link into the ChatGPT app:
+// iOS/Android fire universal-/app-links on the initial tap, not on a server
+// redirect — so the destination opens in the browser tab instead of the app.
+export const CHATGPT_OPEN_PATH = "/open-chatgpt";
 
 export function escapeHtml(s: string): string {
   return s
@@ -392,7 +399,7 @@ export function resultPage(opts: {
     <pre>${safeUrl}</pre>
     <button class="copy" data-copy="${safeUrl}">${copyIcon}<span>Copy</span></button>
   </div>
-  <a class="btn cta" href="${CHATGPT_CONNECTORS_URL}" target="_blank" rel="noopener" data-connect="${safeUrl}"><span>Connect to ChatGPT</span>${linkOutIcon}</a>
+  <a class="btn cta" href="${CHATGPT_OPEN_PATH}" target="_blank" rel="noopener" data-connect="${safeUrl}"><span>Connect to ChatGPT</span>${linkOutIcon}</a>
   <p class="connect-hint"><span class="n">1.</span> Turn on Developer mode&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">2.</span> Create app&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">3.</span> Paste link&nbsp;&nbsp;·&nbsp;&nbsp;<span class="n">4.</span> Select No&nbsp;Auth</p>
 </section>
 <section id="how" style="padding-top:8px">
