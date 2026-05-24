@@ -131,7 +131,7 @@ Three optional knobs make a single login last much longer:
 
 | Env var | Effect |
 |---|---|
-| `REDIS_URL` | Persist each authenticated session (cookies only, **encrypted** with `CONNECTOR_SECRET`) to Redis. After a restart/spin‑down the server rehydrates it and **skips captcha+login** — as long as VTOP still considers the session valid. Requires `CONNECTOR_SECRET`. Works with any Redis (e.g. Upstash's free tier). |
+| `REDIS_URL` | Persist each authenticated session (cookies only, **encrypted** with `CONNECTOR_SECRET`) to Redis. After a restart/spin‑down the server rehydrates it and **skips captcha+login** — as long as VTOP still considers the session valid. Requires `CONNECTOR_SECRET`. Works with any Redis (e.g. Upstash's free tier). **For a TLS endpoint (Upstash etc.) use the `rediss://` scheme** (double‑s), e.g. `rediss://default:<password>@<host>:6379` — `redis://` won't enable TLS and the connection will fail. The server logs whether Redis is reachable at startup. |
 | `SESSION_KEEPALIVE_MS` | Periodically touch VTOP for each live session so its server‑side timer doesn't idle out (e.g. `600000` = 10 min). Only useful on an always‑on / kept‑warm host. Off by default. |
 | `SESSION_PERSIST_TTL_SEC` | How long a persisted blob lives before self‑expiring. Default `7200` (2 h). |
 

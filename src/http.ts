@@ -379,6 +379,20 @@ app.listen(PORT, () => {
       "VtopMCP: REDIS_URL is set but CONNECTOR_SECRET is not — session persistence is disabled (it needs the secret to encrypt blobs).",
     );
   }
+  // Verify Redis is actually reachable at startup so a misconfigured REDIS_URL
+  // is obvious immediately (rather than silently failing on the first login).
+  if (sessionStore && isMultiUserEnabled()) {
+    void sessionStore
+      .get("__startup_check__")
+      .then(() => console.error("VtopMCP: Redis session store reachable — persistence active."))
+      .catch((e) =>
+        console.error(
+          "VtopMCP: Redis session store UNREACHABLE:",
+          e instanceof Error ? e.message : e,
+          "— check REDIS_URL. Upstash needs the rediss:// scheme (TLS), e.g. rediss://default:<password>@<host>:6379",
+        ),
+      );
+  }
   if (KEEPALIVE_MS > 0) {
     console.error(`VtopMCP: session keepalive ON (every ${Math.round(KEEPALIVE_MS / 1000)}s).`);
   }
