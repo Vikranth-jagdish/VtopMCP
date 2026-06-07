@@ -416,10 +416,34 @@ export interface AttendanceDetailCounts {
   odHours: number;
 }
 
+/** "08:00", "08:00 AM", "01:40 PM" -> minutes since midnight, or null. */
+function clockToMinutes(token: string): number | null {
+  const m = token.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if (!m) return null;
+  let h = +m[1];
+  const min = +m[2];
+  const ap = m[3]?.toUpperCase();
+  if (ap === "PM" && h !== 12) h += 12;
+  else if (ap === "AM" && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+/**
+ * How many ~50-minute class periods a "Day And Timing" cell spans (a 2-period
+ * lab counts as 2). VTOP writes timings in either 24-hour ("14:00-15:40") or
+ * 12-hour ("02:00 PM - 03:40 PM") form, and each end may carry its own AM/PM,
+ * so we parse both clock tokens independently. A 12-hour pair that crosses noon
+ * without an explicit PM on the end (e.g. "11:00-01:40") yields a negative span;
+ * we add 12h to recover it rather than silently undercounting to one period.
+ */
 function periodsFromTiming(timing: string): number {
-  const m = timing.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
-  if (!m) return 1;
-  const dur = (+m[3] * 60 + +m[4]) - (+m[1] * 60 + +m[2]);
+  const tokens = timing.match(/\d{1,2}:\d{2}\s*(?:AM|PM)?/gi);
+  if (!tokens || tokens.length < 2) return 1;
+  const start = clockToMinutes(tokens[0]);
+  const end = clockToMinutes(tokens[tokens.length - 1]);
+  if (start == null || end == null) return 1;
+  let dur = end - start;
+  if (dur < 0) dur += 12 * 60;
   return dur <= 0 ? 1 : Math.max(1, Math.round(dur / 50));
 }
 
@@ -719,6 +743,63 @@ export function parseExamSchedule(html: string): ExamSchedule[] {
   return schedules;
 }
 
+const GRADE_SET = new Set<string>(GRADE_LETTERS);
+/** "Nov 2025", "November-2025", "Nov'2025" — an exam-month token. */
+const MONTH_YEAR_RE = /^[A-Za-z]{3,9}[\s.,'-]*\d{4}$/;
+
+/**
+ * Pull one grade row's fields out of its cell texts by CONTENT, not fixed
+ * column index, so the parser survives VTOP reordering/adding columns (the
+ * usual cause of "grades didn't parse"). Returns null for rows that aren't a
+ * course-grade row (header, summary, detail). A row needs at least a course
+ * code and an exam-month token to count.
+ */
+function extractGradeRow(
+  texts: string[]
+): { record: GradeRecord; examMonth: string } | null {
+  const codeIdx = texts.findIndex((t) => /^[A-Z]{2,}\d{3,4}[A-Z]?$/.test(t));
+  if (codeIdx < 0) return null;
+  const examMonth = texts.find((t) => MONTH_YEAR_RE.test(t)) ?? "";
+  if (!examMonth) return null;
+
+  // Grade: the first lone grade letter (S/A/B/.../N) after the code.
+  let gradeIdx = -1;
+  for (let i = codeIdx + 1; i < texts.length; i++) {
+    if (GRADE_SET.has(texts[i].toUpperCase())) {
+      gradeIdx = i;
+      break;
+    }
+  }
+  const grade = gradeIdx >= 0 ? texts[gradeIdx].toUpperCase() : "";
+  const end = gradeIdx >= 0 ? gradeIdx : texts.length;
+
+  // Credits: a plain number (≤ 30) after the code — the Sl.No sits before the
+  // code, so it isn't mistaken for credits. Scan the whole tail (not just up to
+  // the grade) because some layouts put Credits after the Grade column; skip the
+  // grade cell itself and exam-month tokens.
+  let credits = 0;
+  for (let i = codeIdx + 1; i < texts.length; i++) {
+    if (i === gradeIdx || MONTH_YEAR_RE.test(texts[i])) continue;
+    if (/^\d+(\.\d+)?$/.test(texts[i]) && +texts[i] <= 30) credits = +texts[i];
+  }
+  // Title/type: the non-numeric, non-grade cells right after the code.
+  const meta = texts
+    .slice(codeIdx + 1, end)
+    .filter((t) => t && !/^\d+(\.\d+)?$/.test(t) && !GRADE_SET.has(t.toUpperCase()));
+
+  return {
+    record: {
+      courseCode: texts[codeIdx],
+      courseName: meta[0] ?? "",
+      courseType: meta[1] ?? "",
+      credits,
+      grade,
+      gradePoints: (GRADE_POINTS as Record<string, number>)[grade] ?? 0,
+    },
+    examMonth,
+  };
+}
+
 export function parseGradeHistory(html: string): GradeHistory {
   const $ = cheerio.load(html);
   const history: GradeHistory = {
@@ -733,34 +814,29 @@ export function parseGradeHistory(html: string): GradeHistory {
     history.totalCredits = summary.creditsEarned;
   }
 
-  // Walk the "Effective Grades" table for per-course rows, then group by
-  // exam month. The detail rows (id="detailsView_...") are skipped.
+  // Walk the "Effective Grades" table for per-course rows, then group by exam
+  // month. Prefer the tagged rows (tr.tableContent); if VTOP dropped/renamed
+  // that class, fall back to scanning every row — extractGradeRow ignores
+  // anything that isn't a real course-grade row. Detail rows (id="detailsView_")
+  // are always skipped.
+  let rows = $("table tr.tableContent").toArray();
+  if (rows.length === 0) rows = $("table tr").toArray();
+
   const grouped = new Map<string, GradeRecord[]>();
-  $("table tr.tableContent").each((_i, tr) => {
+  for (const tr of rows) {
     const $tr = $(tr);
-    if ($tr.attr("id")?.startsWith("detailsView_")) return;
-    const cells = $tr.find("td");
-    if (cells.length < 8) return;
-    const courseCode = $(cells[1]).text().trim();
-    if (!/^[A-Z]{2,}[0-9]+/i.test(courseCode)) return;
-    const courseName = $(cells[2]).text().trim();
-    const courseType = $(cells[3]).text().trim();
-    const credits = parseFloat($(cells[4]).text().trim()) || 0;
-    const grade = $(cells[5]).text().trim().toUpperCase();
-    const examMonth = $(cells[6]).text().trim();
-    if (!examMonth) return;
-    const record: GradeRecord = {
-      courseCode,
-      courseName,
-      courseType,
-      credits,
-      grade,
-      gradePoints: (GRADE_POINTS as Record<string, number>)[grade] ?? 0,
-    };
+    if ($tr.attr("id")?.startsWith("detailsView_")) continue;
+    const texts = $tr
+      .find("td")
+      .map((_j, el) => $(el).text().replace(/\s+/g, " ").trim())
+      .get();
+    const parsed = extractGradeRow(texts);
+    if (!parsed) continue;
+    const { record, examMonth } = parsed;
     const bucket = grouped.get(examMonth) ?? [];
     bucket.push(record);
     grouped.set(examMonth, bucket);
-  });
+  }
 
   for (const [examMonth, grades] of grouped) {
     const earnedCredits = grades.reduce(

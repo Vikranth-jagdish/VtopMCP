@@ -7,6 +7,25 @@ alters VTOP's HTML.
 
 ## [Unreleased]
 
+### Fixed
+- **OD hours undercounted on 12-hour (AM/PM) timings.** `calculate_od` derives a
+  class's period count from its "Day And Timing" cell. The old parser only read
+  24-hour `HH:MM` times, so a 12-hour entry whose span crossed noon
+  (e.g. an `11:00 AM - 01:40 PM` lab) computed a negative duration and silently
+  fell back to one period — undercounting OD hours. Both clock tokens are now
+  parsed with their own AM/PM, and a noon-crossing span is corrected.
+- **Grade history could return empty/garbled data ("didn't parse").**
+  `parseGradeHistory` relied on fixed column positions, an exact `tableContent`
+  class, and an 8-column row. Any VTOP layout change (reordered/added columns,
+  renamed class) made it silently return nothing or mis-mapped fields. Columns
+  are now detected by content (course code, grade letter, credits, exam month),
+  with a fallback that scans every row when `tableContent` is absent.
+- **Transient bad grade page no longer poisons the session.**
+  `getGradeHistoryHtml` cached the first response for the whole session; an
+  occasional empty/error shell (still HTTP 200) would make every grade and
+  curriculum call fail until logout. Only pages that actually carry grade
+  content (a CGPA value or a course code) are cached now.
+
 ### Added
 - **`calculate_gpa` tool — GPA / CGPA calculator** (VIT 10-point scale). Reports
   current CGPA, percentage (CGPA×10), and each completed semester's GPA (computed

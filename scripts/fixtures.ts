@@ -38,6 +38,29 @@ export const ATT_DETAIL_HTML = `
   <tr><td>4</td><td>07-Jan-2026</td><td>A1</td><td>MON,08:00-08:50</td><td>Absent</td></tr>
 </table>`;
 
+// Per-class detail using VTOP's 12-hour AM/PM timing form, including a lab whose
+// span crosses noon ("11:00 AM-01:40 PM" = 3 periods). Tests periodsFromTiming's
+// AM/PM handling: 1 present + OD theory (1h) + OD lab (3h) = 4 OD hours.
+export const ATT_DETAIL_AMPM_HTML = `
+<table>
+  <tr><td>Sl.No</td><td>Date</td><td>Slot</td><td>Day And Timing</td><td>Status</td></tr>
+  <tr><td>1</td><td>01-Jan-2026</td><td>A1</td><td>Monday (09:00 AM - 09:50 AM)</td><td>Present</td></tr>
+  <tr><td>2</td><td>02-Jan-2026</td><td>A1</td><td>Tuesday (02:00 PM - 02:50 PM)</td><td>On Duty</td></tr>
+  <tr><td>3</td><td>03-Jan-2026</td><td>L1</td><td>Wednesday (11:00 AM - 01:40 PM)</td><td>On Duty</td></tr>
+</table>`;
+
+// Grade history with REORDERED columns (grade before credits, exam month first,
+// no tr.tableContent class) to prove content-based parsing survives a layout shift.
+export const GRADE_HISTORY_REORDERED_HTML = `
+<table>
+  <tr><td>Nov 2025</td><td>1</td><td>BTST101L</td><td>Database Systems</td><td>Theory Only</td><td>A</td><td>3</td></tr>
+  <tr><td>Nov 2025</td><td>2</td><td>BTST202L</td><td>Marketing</td><td>Theory Only</td><td>B</td><td>4</td></tr>
+</table>
+<table>
+  <tr><td>Credits Registered</td><td>Credits Earned</td><td>CGPA</td></tr>
+  <tr><td>7</td><td>7</td><td>8.43</td></tr>
+</table>`;
+
 // Timetable: weekly grid (BTST101L A1 + BTST202L F1 theory, BTST101P L1 lab, all MON).
 export const TIMETABLE_HTML = `<table class="w3-table-all">
 <tr><td>THEORY</td><td>Start</td><td>08:00</td><td>08:55</td><td>Lunch</td></tr>

@@ -90,6 +90,13 @@ check("parseAttendanceDetail counts statuses + OD hours (lab=2)", () => {
   assert.equal(d.total, 4);
   assert.equal(d.odHours, 3);
 });
+check("parseAttendanceDetail handles 12-hour AM/PM timings (noon-crossing lab)", () => {
+  const d = parseAttendanceDetail(F.ATT_DETAIL_AMPM_HTML);
+  assert.equal(d.present, 1);
+  assert.equal(d.onDuty, 2);
+  // 1h OD theory + 3h OD lab (11:00 AM–01:40 PM); pre-fix this counted as 1+1.
+  assert.equal(d.odHours, 4);
+});
 
 // --- grade history ---
 check("parseGradeHistory reads CGPA + per-semester grades", () => {
@@ -100,6 +107,18 @@ check("parseGradeHistory reads CGPA + per-semester grades", () => {
   assert.equal(h.semesters[0].semester, "Nov 2025");
   assert.equal(h.semesters[0].gpa, 8.43); // (3*9 + 4*8)/7
   assert.equal(h.semesters[0].grades.length, 2);
+});
+check("parseGradeHistory survives reordered columns + no tableContent class", () => {
+  const h = parseGradeHistory(F.GRADE_HISTORY_REORDERED_HTML);
+  assert.equal(h.cgpa, 8.43);
+  assert.equal(h.semesters.length, 1);
+  assert.equal(h.semesters[0].semester, "Nov 2025");
+  assert.equal(h.semesters[0].gpa, 8.43); // (3*9 + 4*8)/7
+  assert.equal(h.semesters[0].grades.length, 2);
+  const db = h.semesters[0].grades.find((g) => g.courseCode === "BTST101L")!;
+  assert.equal(db.grade, "A");
+  assert.equal(db.credits, 3);
+  assert.equal(db.courseName, "Database Systems");
 });
 
 console.log(`\n${passed} checks passed.`);

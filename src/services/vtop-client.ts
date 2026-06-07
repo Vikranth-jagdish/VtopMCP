@@ -666,7 +666,13 @@ export class VtopClient {
       verifyMenu: "true",
       nocache: String(Date.now()),
     });
-    this.cachedGradeHistoryHtml = html;
+    // Only cache a page that actually carries grade content. VTOP occasionally
+    // returns a transient empty/error shell (still HTTP 200, no expiry marker);
+    // caching that would poison every grade/curriculum call for the whole
+    // session. Leaving it uncached lets the next call refetch a good page.
+    if (/cgpa/i.test(html) || COURSE_CODE_PATTERN.test(html)) {
+      this.cachedGradeHistoryHtml = html;
+    }
     return html;
   }
 
